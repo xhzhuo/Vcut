@@ -1,6 +1,9 @@
 # API Keys and Secrets
 .env
 
+# FFmpeg (installed via system package in Docker)
+ffmpeg/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -10,11 +13,6 @@ venv/
 .pytest_cache/
 .pytest_tmp/
 
-# FFmpeg extras (only bin/*.exe and bin/*.dll are needed)
-ffmpeg/doc/
-ffmpeg/include/
-ffmpeg/lib/
-ffmpeg/bin/ffplay.exe
 
 # Project Artifacts
 artifacts/
