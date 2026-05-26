@@ -1,0 +1,14 @@
+.env
+.git
+.github
+.claude
+__pycache__
+*.pyc
+inputs/
+artifacts/
+tests/
+ffmpeg/
+.venv
+venv
+*.egg-info
+.pytest_tmp

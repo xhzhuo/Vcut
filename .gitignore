@@ -1,0 +1,39 @@
+# API Keys and Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.pytest_cache/
+.pytest_tmp/
+
+# FFmpeg extras (only bin/*.exe and bin/*.dll are needed)
+ffmpeg/doc/
+ffmpeg/include/
+ffmpeg/lib/
+ffmpeg/bin/ffplay.exe
+
+# Project Artifacts
+artifacts/
+inputs/
+test_artifacts/
+test_artifacts_cache/
+test_artifacts_multi/
+test_artifacts_render/
+test_asr_cache_provider/
+test_asr_provider_outputs/
+test_inputs_dir/
+test_manual_pipeline/
+test_manual_segments_strategy/
+test_render_work_case*/
+pytest-cache-files-*/
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
