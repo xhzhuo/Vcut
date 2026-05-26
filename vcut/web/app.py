@@ -1,9 +1,11 @@
-"""FastAPI web interface for VCut."""
+"""FastAPI web interface for VCut — manual pipeline mode."""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -15,20 +17,18 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
+import openpyxl
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VCut")
 
 # ---------------------------------------------------------------------------
-# Paths (configurable via env for Docker / local dev)
+# Paths
 # ---------------------------------------------------------------------------
-DATA_DIR = Path(os.getenv("VCUT_DATA_DIR", "/data"))
-VIDEOS_DIR = DATA_DIR / "videos"
-OUTPUT_DIR = DATA_DIR / "output"
+INPUTS_DIR = Path(os.getenv("VCUT_INPUTS_DIR", str(Path(__file__).resolve().parents[2] / "inputs")))
 ARTIFACTS_DIR = Path(os.getenv("VCUT_ARTIFACTS_DIR", str(Path(__file__).resolve().parents[2] / "artifacts")))
-
-VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR = Path(os.getenv("VCUT_OUTPUT_DIR", str(Path(__file__).resolve().parents[2] / "output")))
 
 # ---------------------------------------------------------------------------
 # Task state
@@ -36,46 +36,45 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 @dataclass
 class Task:
     id: str
-    video_filename: str
-    goal: str
-    status: str = "pending"       # pending | running | done | failed
+    brand: str
+    goal: str = ""
+    status: str = "pending"
     stage: str = ""
-    progress: int = 0             # 0-100
+    progress: int = 0
     output_file: str = ""
     error: str = ""
-    artifacts_subdir: str = ""    # relative path under ARTIFACTS_DIR
+    labels: list[str] = field(default_factory=list)
+    variants: int = 1
+    artifacts_subdir: str = ""
 
 _tasks: dict[str, Task] = {}
 _lock = threading.Lock()
-_running: bool = False            # only one task at a time
+_running: bool = False
 
 # ---------------------------------------------------------------------------
-# Progress detection
+# Progress detection for manual pipeline
 # ---------------------------------------------------------------------------
-_STAGE_ORDER = [
-    ("asr", "transcript.json", 20),
-    ("scene", "shots.json", 40),
-    ("alignment", "asset_pool.json", 60),
+_MANUAL_STAGE_ORDER = [
+    ("segments", "manual_segments.json", 20),
+    ("transcripts", "manual_transcripts.json", 40),
     ("strategy", "edit_plan.json", 80),
-    ("render", None, 100),  # checked by output file existence
+    ("render", None, 100),
 ]
 
 
 def _detect_progress(task: Task) -> None:
-    """Update task progress by checking artifact files on disk."""
     if task.status != "running":
         return
 
     base = ARTIFACTS_DIR / task.artifacts_subdir if task.artifacts_subdir else ARTIFACTS_DIR
 
-    for stage_name, filename, pct in _STAGE_ORDER:
+    for stage_name, filename, pct in _MANUAL_STAGE_ORDER:
         if filename and (base / filename).exists():
             task.stage = stage_name
             task.progress = pct
         else:
             break
     else:
-        # all files exist
         task.stage = "render"
         task.progress = 90
 
@@ -86,26 +85,56 @@ def _detect_progress(task: Task) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Background runner
+# Pipeline runner
 # ---------------------------------------------------------------------------
-def _run_pipeline(task: Task) -> None:
+def _find_output_video(task: Task) -> str | None:
+    """Find the actual output video after pipeline completes."""
+    # Check the expected path first
+    if task.output_file and Path(task.output_file).exists():
+        return task.output_file
+    # Pipeline might have written to artifacts dir instead
+    brand_artifacts = ARTIFACTS_DIR / task.brand
+    if brand_artifacts.exists():
+        candidates = sorted(brand_artifacts.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidates:
+            return str(candidates[0])
+    # Search OUTPUT_DIR
+    brand_output = OUTPUT_DIR / task.brand
+    if brand_output.exists():
+        candidates = sorted(brand_output.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidates:
+            return str(candidates[0])
+    return None
+
+
+def _run_manual_pipeline(task: Task) -> None:
     global _running
     try:
-        input_path = str(VIDEOS_DIR / task.video_filename)
-        output_path = str(OUTPUT_DIR / f"{task.id}.mp4")
+        xlsx_path = str(INPUTS_DIR / task.brand / "切片方案.xlsx")
+        video_dir = str(INPUTS_DIR / task.brand)
+        output_path = str(OUTPUT_DIR / task.brand / f"{task.id}.mp4")
         task.output_file = output_path
+
+        # Ensure output dir exists
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         cmd = [
             "python", "main.py",
-            "--input-video", input_path,
+            "--manual-xlsx", xlsx_path,
+            "--manual-video-dir", video_dir,
+            "--labels", *task.labels,
             "--output-video", output_path,
-            "--goal", task.goal,
+            "--manual-variants", str(task.variants),
+            "--group-name", task.brand,
         ]
+
+        if task.goal:
+            cmd.extend(["--manual-goal", task.goal, "--manual-use-asr-llm"])
 
         env = os.environ.copy()
         env["VCUT_ARTIFACTS_DIR"] = str(ARTIFACTS_DIR)
 
-        logger.info("Starting pipeline: %s", " ".join(cmd))
+        logger.info("Starting manual pipeline: %s", " ".join(cmd))
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -115,7 +144,6 @@ def _run_pipeline(task: Task) -> None:
             cwd=str(Path(__file__).resolve().parents[2]),
         )
 
-        # Read stdout line by line for logging
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
             if line:
@@ -127,6 +155,10 @@ def _run_pipeline(task: Task) -> None:
             task.status = "failed"
             task.error = f"Pipeline exited with code {proc.returncode}"
         else:
+            # Find actual output file (pipeline may have redirected the path)
+            actual = _find_output_video(task)
+            if actual:
+                task.output_file = actual
             _detect_progress(task)
             if task.status != "done":
                 task.status = "done"
@@ -143,50 +175,165 @@ def _run_pipeline(task: Task) -> None:
 
 
 # ---------------------------------------------------------------------------
-# API routes
+# API: Brands
 # ---------------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    html_path = Path(__file__).parent / "index.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+@app.get("/api/brands")
+async def list_brands():
+    if not INPUTS_DIR.exists():
+        return []
+
+    brands = []
+    for d in sorted(INPUTS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        xlsx = d / "切片方案.xlsx"
+        videos = [f for f in d.iterdir() if f.suffix.lower() in (".mp4", ".mov", ".avi", ".mkv")]
+        brands.append({
+            "name": d.name,
+            "video_count": len(videos),
+            "has_xlsx": xlsx.exists(),
+        })
+    return brands
 
 
+@app.get("/api/brands/{brand}/xlsx")
+async def read_brand_xlsx(brand: str):
+    xlsx_path = INPUTS_DIR / brand / "切片方案.xlsx"
+    if not xlsx_path.exists():
+        raise HTTPException(status_code=404, detail=f"品牌 '{brand}' 无切片方案.xlsx")
+
+    wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="xlsx 为空")
+
+    headers = [str(h).strip() if h else "" for h in rows[0]]
+
+    # Identify label columns (skip 序号 and 视频)
+    skip = {"序号", "视频", "video", "videofile", "sourcevideo"}
+    labels = [h for h in headers if h and h.lower() not in skip and h.lower() != "序号"]
+
+    # Count data rows with valid video
+    video_col = None
+    for i, h in enumerate(headers):
+        if h.lower() in ("视频", "video", "videofile", "sourcevideo"):
+            video_col = i
+            break
+
+    data_rows = 0
+    if video_col is not None:
+        for row in rows[1:]:
+            if row[video_col]:
+                data_rows += 1
+
+    wb.close()
+    return {"labels": labels, "row_count": data_rows}
+
+
+# ---------------------------------------------------------------------------
+# API: Brand management
+# ---------------------------------------------------------------------------
+@app.post("/api/brands")
+async def create_brand(body: dict):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="缺少品牌名称")
+    brand_dir = INPUTS_DIR / name
+    if brand_dir.exists():
+        raise HTTPException(status_code=409, detail=f"品牌 '{name}' 已存在")
+    brand_dir.mkdir(parents=True, exist_ok=True)
+    return {"name": name}
+
+
+@app.delete("/api/brands/{brand}")
+async def delete_brand(brand: str):
+    brand_dir = INPUTS_DIR / brand
+    if not brand_dir.exists():
+        raise HTTPException(status_code=404, detail="品牌不存在")
+    import shutil
+    shutil.rmtree(brand_dir)
+    return {"ok": True}
+
+
+@app.get("/api/brands/{brand}/files")
+async def list_brand_files(brand: str):
+    brand_dir = INPUTS_DIR / brand
+    if not brand_dir.exists():
+        raise HTTPException(status_code=404, detail="品牌不存在")
+    files = []
+    for f in sorted(brand_dir.iterdir()):
+        if f.is_file():
+            files.append({
+                "name": f.name,
+                "size_mb": round(f.stat().st_size / 1024 / 1024, 1),
+                "type": "xlsx" if f.suffix.lower() == ".xlsx" else "video" if f.suffix.lower() in (".mp4", ".mov", ".avi", ".mkv") else "other",
+            })
+    return files
+
+
+@app.post("/api/brands/{brand}/files")
+async def upload_brand_file(brand: str, file: UploadFile = File(...)):
+    brand_dir = INPUTS_DIR / brand
+    brand_dir.mkdir(parents=True, exist_ok=True)
+    dest = brand_dir / file.filename
+    content = await file.read()
+    dest.write_bytes(content)
+    logger.info("Uploaded %s to %s (%d bytes)", file.filename, brand_dir, len(content))
+    return {"name": file.filename, "size_mb": round(len(content) / 1024 / 1024, 1)}
+
+
+@app.delete("/api/brands/{brand}/files/{filename}")
+async def delete_brand_file(brand: str, filename: str):
+    file_path = INPUTS_DIR / brand / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    file_path.unlink()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# API: Tasks
+# ---------------------------------------------------------------------------
 @app.post("/api/tasks")
-async def create_task(
-    video: UploadFile = File(...),
-    goal: str = Form("30秒精华片段"),
-):
+async def create_task(body: dict):
     global _running
+
+    brand = body.get("brand")
+    if not brand:
+        raise HTTPException(status_code=400, detail="缺少 brand 参数")
+
+    xlsx_path = INPUTS_DIR / brand / "切片方案.xlsx"
+    if not xlsx_path.exists():
+        raise HTTPException(status_code=404, detail=f"品牌 '{brand}' 无切片方案.xlsx")
+
+    labels = body.get("labels", [])
+    if not labels:
+        raise HTTPException(status_code=400, detail="缺少 labels 参数")
+
     with _lock:
         if _running:
             raise HTTPException(status_code=429, detail="已有任务在运行，请等待完成")
 
     task_id = uuid.uuid4().hex[:12]
-    filename = f"{task_id}_{video.filename}"
-    dest = VIDEOS_DIR / filename
-
-    # Save uploaded file
-    content = await video.read()
-    dest.write_bytes(content)
-    logger.info("Saved upload: %s (%d bytes)", dest, len(content))
-
     task = Task(
         id=task_id,
-        video_filename=filename,
-        goal=goal,
+        brand=brand,
+        goal=body.get("goal", ""),
+        labels=labels,
+        variants=body.get("variants", 1),
         status="running",
         stage="starting",
         progress=0,
+        artifacts_subdir=brand,
     )
 
     with _lock:
         _tasks[task_id] = task
         _running = True
 
-    # Infer artifacts subdir (pipeline creates it based on video name)
-    task.artifacts_subdir = Path(filename).stem
-
-    thread = threading.Thread(target=_run_pipeline, args=(task,), daemon=True)
+    thread = threading.Thread(target=_run_manual_pipeline, args=(task,), daemon=True)
     thread.start()
 
     return {"id": task_id, "status": "running"}
@@ -202,7 +349,6 @@ async def get_task(task_id: str):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
-
     _detect_progress(task)
     return _task_dict(task)
 
@@ -220,17 +366,215 @@ async def download_task(task_id: str):
     return FileResponse(
         task.output_file,
         media_type="video/mp4",
-        filename=f"vcut_{task_id}.mp4",
+        filename=f"vcut_{task.brand}_{task_id}.mp4",
     )
+
+
+# ---------------------------------------------------------------------------
+# API: Output videos & edit plans & feedback
+# ---------------------------------------------------------------------------
+def _find_brand_outputs(brand: str) -> list[Path]:
+    """Find all output mp4 files for a brand across output and artifacts dirs."""
+    seen: set[str] = set()
+    results: list[Path] = []
+    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+        if not search_dir.exists():
+            continue
+        for f in sorted(search_dir.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+            key = f.name
+            if key not in seen:
+                seen.add(key)
+                results.append(f)
+    return results
+
+
+def _find_edit_plan_for_video(brand: str, video_name: str) -> dict | None:
+    """Find the edit plan associated with a video."""
+    brand_dir = ARTIFACTS_DIR / brand
+    if not brand_dir.exists():
+        return None
+
+    stem = Path(video_name).stem
+
+    # Primary: edit_plan_{video_stem}.json (pipeline naming convention)
+    exact = brand_dir / f"edit_plan_{stem}.json"
+    if exact.exists():
+        try:
+            return json.loads(exact.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: any edit_plan_*.json (for legacy or mismatched names)
+    plan_files = sorted(brand_dir.glob("edit_plan_*.json"))
+    if len(plan_files) == 1:
+        try:
+            return json.loads(plan_files[0].read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: single edit_plan.json
+    single = brand_dir / "edit_plan.json"
+    if single.exists():
+        try:
+            return json.loads(single.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return None
+
+
+def _load_feedback(brand: str, video_name: str) -> dict | None:
+    fb_path = ARTIFACTS_DIR / brand / "feedback" / f"{Path(video_name).stem}.json"
+    if not fb_path.exists():
+        return None
+    try:
+        return json.loads(fb_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _load_segment_label_map(brand: str) -> dict[str, str]:
+    """Load segment_id -> label mapping from manual_segments.json."""
+    seg_path = ARTIFACTS_DIR / brand / "manual_segments.json"
+    if not seg_path.exists():
+        return {}
+    try:
+        segments = json.loads(seg_path.read_text(encoding="utf-8"))
+        return {s["segment_id"]: s.get("label", "") for s in segments if "segment_id" in s}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _enrich_plan_with_labels(plan: list[dict], label_map: dict[str, str]) -> list[dict]:
+    """Add label field to each plan item from segment label map."""
+    enriched = []
+    for item in plan:
+        item = dict(item)
+        seg_id = item.get("segment_id", "")
+        item["label"] = label_map.get(seg_id, "")
+        enriched.append(item)
+    return enriched
+
+
+@app.get("/api/brands/{brand}/outputs")
+async def list_brand_outputs(brand: str):
+    outputs = _find_brand_outputs(brand)
+    label_map = _load_segment_label_map(brand)
+    results = []
+    for vpath in outputs:
+        plan = _find_edit_plan_for_video(brand, vpath.name)
+        if plan and label_map:
+            plan = _enrich_plan_with_labels(plan, label_map)
+        feedback = _load_feedback(brand, vpath.name)
+        stat = vpath.stat()
+        results.append({
+            "name": vpath.name,
+            "size_mb": round(stat.st_size / 1024 / 1024, 1),
+            "created_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(stat.st_mtime)),
+            "plan": plan,
+            "feedback": feedback,
+        })
+    return results
+
+
+@app.get("/api/brands/{brand}/outputs/{filename}/plan")
+async def get_edit_plan(brand: str, filename: str):
+    plan = _find_edit_plan_for_video(brand, filename)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="未找到对应的 edit plan")
+    label_map = _load_segment_label_map(brand)
+    if label_map:
+        plan = _enrich_plan_with_labels(plan, label_map)
+    return plan
+
+
+@app.post("/api/brands/{brand}/outputs/{filename}/feedback")
+async def save_feedback(brand: str, filename: str, body: dict):
+    fb_dir = ARTIFACTS_DIR / brand / "feedback"
+    fb_dir.mkdir(parents=True, exist_ok=True)
+    fb_path = fb_dir / f"{Path(filename).stem}.json"
+    data = {
+        "video": filename,
+        "brand": brand,
+        "rating": body.get("rating", 0),
+        "comment": body.get("comment", ""),
+        "tags": body.get("tags", []),
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    fb_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
+
+
+@app.put("/api/brands/{brand}/outputs/{filename}")
+async def rename_output(brand: str, filename: str, body: dict):
+    new_name = body.get("name", "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="缺少新文件名")
+    if not new_name.endswith(".mp4"):
+        new_name += ".mp4"
+
+    # Find the file
+    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+        old_path = search_dir / filename
+        if old_path.exists():
+            new_path = search_dir / new_name
+            if new_path.exists():
+                raise HTTPException(status_code=409, detail="目标文件名已存在")
+            old_path.rename(new_path)
+            # Rename feedback too
+            fb_old = ARTIFACTS_DIR / brand / "feedback" / f"{Path(filename).stem}.json"
+            if fb_old.exists():
+                fb_new = ARTIFACTS_DIR / brand / "feedback" / f"{Path(new_name).stem}.json"
+                fb_old.rename(fb_new)
+            return {"ok": True, "new_name": new_name}
+
+    raise HTTPException(status_code=404, detail="文件不存在")
+
+
+@app.delete("/api/brands/{brand}/outputs/{filename}")
+async def delete_output(brand: str, filename: str):
+    deleted = False
+    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+        fpath = search_dir / filename
+        if fpath.exists():
+            fpath.unlink()
+            deleted = True
+    if not deleted:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    # Delete feedback too
+    fb_path = ARTIFACTS_DIR / brand / "feedback" / f"{Path(filename).stem}.json"
+    if fb_path.exists():
+        fb_path.unlink()
+    return {"ok": True}
+
+
+@app.get("/api/brands/{brand}/outputs/{filename}/download")
+async def download_output(brand: str, filename: str):
+    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+        fpath = search_dir / filename
+        if fpath.exists():
+            return FileResponse(str(fpath), media_type="video/mp4", filename=filename)
+    raise HTTPException(status_code=404, detail="文件不存在")
+
+
+# ---------------------------------------------------------------------------
+# HTML
+# ---------------------------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    html_path = Path(__file__).parent / "index.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
 def _task_dict(task: Task) -> dict[str, Any]:
     return {
         "id": task.id,
+        "brand": task.brand,
         "status": task.status,
         "stage": task.stage,
         "progress": task.progress,
         "goal": task.goal,
-        "video_filename": task.video_filename,
+        "labels": task.labels,
+        "variants": task.variants,
         "error": task.error,
     }

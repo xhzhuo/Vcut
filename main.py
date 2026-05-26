@@ -96,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run in interactive prompt mode (CLI args still override prompts).",
     )
+    parser.add_argument(
+        "--group-name",
+        default=None,
+        help="Explicit group/brand name for artifacts directory. Overrides auto-inference.",
+    )
     return parser
 
 
@@ -270,6 +275,7 @@ def main() -> None:
             manual_max_duration=args.manual_max_duration,
             manual_use_asr_llm=args.manual_use_asr_llm,
             manual_goal=args.manual_goal,
+            group_name=args.group_name,
         )
         return
 
@@ -291,6 +297,7 @@ def main() -> None:
         goal=args.goal,
         target_duration=args.target_duration,
         style=args.style,
+        group_name=args.group_name,
     )
 
 

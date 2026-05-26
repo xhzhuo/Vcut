@@ -13,7 +13,15 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trus
 
 COPY . .
 
+ENV VCUT_INPUTS_DIR=/data/inputs
+ENV VCUT_OUTPUT_DIR=/data/output
+ENV VCUT_ARTIFACTS_DIR=/data/artifacts
+
+# Symlink so pipeline's infer_group_from_source_paths can find /data/inputs as workspace/inputs
+RUN ln -sfn /data/inputs inputs && ln -sfn /data/artifacts artifacts
+
 EXPOSE 8080
 
 # Default: web mode. Override with: docker run vcut python main.py ...
+# Mount volumes: -v /path/to/inputs:/data/inputs -v /path/to/artifacts:/data/artifacts -v /path/to/output:/data/output
 CMD ["uvicorn", "vcut.web.app:app", "--host", "0.0.0.0", "--port", "8080"]

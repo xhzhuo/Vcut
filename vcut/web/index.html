@@ -10,37 +10,69 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: #0f0f0f; color: #e0e0e0;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 20px;
   }
   .card {
     background: #1a1a1a; border-radius: 16px; padding: 40px;
-    width: 100%; max-width: 520px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    width: 100%; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
-  .subtitle { color: #888; font-size: 14px; margin-bottom: 32px; }
+  .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
 
-  /* Upload area */
-  .upload-area {
-    border: 2px dashed #333; border-radius: 12px; padding: 40px 20px;
-    text-align: center; cursor: pointer; transition: border-color 0.2s;
-    margin-bottom: 20px;
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 28px; background: #111; border-radius: 10px; padding: 4px; }
+  .tab {
+    flex: 1; padding: 10px; text-align: center; border-radius: 8px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    color: #888; transition: all 0.2s; border: none; background: transparent;
   }
-  .upload-area:hover, .upload-area.dragover { border-color: #4a9eff; }
-  .upload-area input { display: none; }
-  .upload-icon { font-size: 48px; margin-bottom: 12px; }
-  .upload-text { color: #888; font-size: 14px; }
-  .file-name { color: #4a9eff; font-size: 14px; margin-top: 8px; }
+  .tab.active { background: #2a2a2a; color: #e0e0e0; }
+  .tab:hover:not(.active) { color: #bbb; }
 
-  /* Goal input */
-  .goal-group { margin-bottom: 24px; }
-  .goal-group label { display: block; font-size: 13px; color: #888; margin-bottom: 8px; }
-  .goal-input {
-    width: 100%; padding: 12px 16px; background: #111; border: 1px solid #333;
+  /* Page containers */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Brand grid */
+  .brand-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+  .brand-card {
+    background: #222; border: 2px solid #333; border-radius: 12px;
+    padding: 20px; cursor: pointer; transition: all 0.2s;
+  }
+  .brand-card:hover { border-color: #4a9eff; background: #1a2a3a; }
+  .brand-card.selected { border-color: #4a9eff; background: #1a3a5c; }
+  .brand-name { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .brand-info { color: #888; font-size: 13px; }
+  .no-xlsx { opacity: 0.5; pointer-events: none; }
+
+  /* Config form */
+  .config-section { display: none; }
+  .config-section.active { display: block; }
+  .form-group { margin-bottom: 20px; }
+  .form-group label { display: block; font-size: 13px; color: #888; margin-bottom: 8px; }
+  .form-input {
+    width: 100%; padding: 10px 14px; background: #111; border: 1px solid #333;
     border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none;
     transition: border-color 0.2s;
   }
-  .goal-input:focus { border-color: #4a9eff; }
+  .form-input:focus { border-color: #4a9eff; }
+  .label-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .label-tag {
+    font-size: 13px; padding: 6px 14px; border-radius: 16px;
+    background: #222; color: #aaa; border: 1px solid #333;
+    cursor: grab; user-select: none; transition: all 0.15s;
+  }
+  .label-tag.dragging { opacity: 0.4; }
+  .label-tag.drag-over { border-color: #4a9eff; background: #1a3a5c; }
 
-  /* Button */
+  /* Checkbox */
+  .checkbox-group { display: flex; align-items: center; gap: 10px; }
+  .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; accent-color: #4a9eff; }
+  .checkbox-group label { margin: 0; font-size: 14px; color: #ccc; }
+  .goal-input { margin-top: 12px; display: none; }
+  .goal-input.active { display: block; }
+
+  /* Buttons */
   .btn {
     width: 100%; padding: 14px; border: none; border-radius: 8px;
     font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s;
@@ -48,6 +80,16 @@
   .btn-primary { background: #4a9eff; color: #fff; }
   .btn-primary:hover { background: #3a8eef; }
   .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-sm {
+    padding: 8px 16px; font-size: 13px; font-weight: 500; border-radius: 6px;
+    border: none; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-back {
+    background: transparent; color: #888; border: 1px solid #333;
+    padding: 10px 20px; border-radius: 8px; font-size: 14px;
+    cursor: pointer; margin-top: 12px; width: auto;
+  }
+  .btn-back:hover { border-color: #555; color: #ccc; }
 
   /* Progress */
   .progress-section { display: none; }
@@ -58,12 +100,18 @@
   }
   .progress-bar {
     height: 100%; background: linear-gradient(90deg, #4a9eff, #6cb8ff);
-    border-radius: 4px; transition: width 0.5s ease;
-    width: 0%;
+    border-radius: 4px; transition: width 0.5s ease; width: 0%;
   }
   .stage-text { color: #888; font-size: 14px; margin-bottom: 24px; }
+  .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stage-tag {
+    font-size: 12px; padding: 4px 10px; border-radius: 12px;
+    background: #222; color: #666;
+  }
+  .stage-tag.active { background: #1a3a5c; color: #4a9eff; }
+  .stage-tag.done { background: #1a3c2a; color: #4caf50; }
 
-  /* Done */
+  /* Done / Error */
   .done-section { display: none; text-align: center; }
   .done-section.active { display: block; }
   .done-icon { font-size: 64px; margin-bottom: 16px; }
@@ -79,18 +127,161 @@
     text-decoration: none; font-size: 14px; margin-top: 12px; cursor: pointer;
   }
   .btn-retry:hover { border-color: #555; color: #ccc; }
-
-  /* Error */
   .error-text { color: #ff6b6b; font-size: 14px; margin: 12px 0; }
 
-  /* Stage labels */
-  .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .stage-tag {
-    font-size: 12px; padding: 4px 10px; border-radius: 12px;
-    background: #222; color: #666;
+  /* Section titles */
+  .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .config-summary {
+    background: #111; border-radius: 8px; padding: 16px; margin-bottom: 20px;
+    font-size: 13px; color: #aaa; line-height: 1.8;
   }
-  .stage-tag.active { background: #1a3a5c; color: #4a9eff; }
-  .stage-tag.done { background: #1a3c2a; color: #4caf50; }
+  .config-summary strong { color: #e0e0e0; }
+
+  /* Management page */
+  .brand-list { margin-bottom: 24px; }
+  .brand-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #222; border-radius: 10px; padding: 14px 18px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.2s; border: 2px solid transparent;
+  }
+  .brand-row:hover { border-color: #333; }
+  .brand-row.expanded { border-color: #4a9eff; }
+  .brand-row-left { display: flex; align-items: center; gap: 12px; }
+  .brand-row-name { font-weight: 600; font-size: 15px; }
+  .brand-row-meta { color: #888; font-size: 13px; }
+  .brand-actions { display: flex; gap: 8px; }
+  .btn-icon {
+    background: transparent; border: 1px solid #333; color: #888;
+    padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-icon:hover { border-color: #555; color: #ccc; }
+  .btn-icon.danger:hover { border-color: #ff6b6b; color: #ff6b6b; }
+
+  /* File list (expanded) */
+  .file-panel {
+    display: none; background: #111; border-radius: 0 0 10px 10px;
+    margin-top: -10px; margin-bottom: 8px; padding: 16px 18px;
+    border: 2px solid #4a9eff; border-top: none;
+  }
+  .file-panel.active { display: block; }
+  .file-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid #222;
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-name { font-size: 13px; color: #ccc; }
+  .file-size { font-size: 12px; color: #666; margin-left: 8px; }
+  .file-type {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    margin-left: 8px;
+  }
+  .file-type.xlsx { background: #1a3c2a; color: #4caf50; }
+  .file-type.video { background: #1a2a5c; color: #4a9eff; }
+  .btn-delete-file {
+    background: transparent; border: none; color: #666;
+    cursor: pointer; font-size: 16px; padding: 4px 8px;
+    transition: color 0.2s;
+  }
+  .btn-delete-file:hover { color: #ff6b6b; }
+
+  /* Upload area */
+  .upload-row {
+    display: flex; gap: 8px; margin-top: 12px; align-items: center;
+  }
+  .upload-btn {
+    background: #222; border: 1px dashed #444; color: #888;
+    padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; transition: all 0.2s; flex: 1; text-align: center;
+  }
+  .upload-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+  .upload-btn input { display: none; }
+
+  /* New brand */
+  .new-brand-row {
+    display: flex; gap: 8px; margin-bottom: 24px;
+  }
+  .new-brand-row input {
+    flex: 1; padding: 10px 14px; background: #111; border: 1px solid #333;
+    border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none;
+  }
+  .new-brand-row input:focus { border-color: #4a9eff; }
+
+  /* Output page */
+  .brand-select {
+    width: 100%; padding: 10px 14px; background: #111; border: 1px solid #333;
+    border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none;
+    margin-bottom: 20px; cursor: pointer;
+  }
+  .brand-select:focus { border-color: #4a9eff; }
+  .output-card {
+    background: #222; border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+    border: 1px solid #333;
+  }
+  .output-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; cursor: pointer; transition: background 0.2s;
+  }
+  .output-header:hover { background: #2a2a2a; }
+  .output-name { font-weight: 600; font-size: 14px; }
+  .output-size { color: #666; font-size: 12px; margin-left: 8px; }
+  .output-time { color: #666; font-size: 12px; }
+  .output-actions { display: flex; gap: 6px; }
+  .output-body {
+    display: none; padding: 0 18px 18px; border-top: 1px solid #333;
+  }
+  .output-body.active { display: block; padding-top: 16px; }
+
+  /* Edit plan table */
+  .plan-table {
+    width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px;
+  }
+  .plan-table th {
+    text-align: left; padding: 8px 10px; background: #1a1a1a;
+    color: #888; font-weight: 500; border-bottom: 1px solid #333;
+  }
+  .plan-table td {
+    padding: 8px 10px; border-bottom: 1px solid #1a1a1a; color: #ccc;
+  }
+  .plan-table tr:hover td { background: #1a1a1a; }
+  .plan-role {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: #1a3a5c; color: #4a9eff;
+  }
+  .plan-reason { color: #888; font-size: 12px; max-width: 200px; }
+
+  /* Feedback */
+  .feedback-section {
+    background: #1a1a1a; border-radius: 8px; padding: 16px; margin-top: 12px;
+  }
+  .feedback-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: #aaa; }
+  .rating-stars { display: flex; gap: 4px; margin-bottom: 12px; }
+  .star {
+    font-size: 24px; cursor: pointer; color: #333; transition: color 0.15s;
+    background: none; border: none; padding: 0;
+  }
+  .star.filled { color: #f5a623; }
+  .star:hover { color: #f5a623; }
+  .feedback-textarea {
+    width: 100%; min-height: 80px; padding: 10px 14px; background: #111;
+    border: 1px solid #333; border-radius: 8px; color: #e0e0e0;
+    font-size: 13px; outline: none; resize: vertical; font-family: inherit;
+  }
+  .feedback-textarea:focus { border-color: #4a9eff; }
+  .feedback-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .feedback-tag {
+    font-size: 12px; padding: 4px 12px; border-radius: 12px;
+    background: #222; color: #888; border: 1px solid #333;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .feedback-tag.selected { background: #1a3a5c; color: #4a9eff; border-color: #4a9eff; }
+  .feedback-saved { color: #4caf50; font-size: 12px; margin-top: 8px; display: none; }
+  .btn-feedback {
+    padding: 8px 20px; background: #4a9eff; color: #fff; border: none;
+    border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 8px;
+    transition: background 0.2s;
+  }
+  .btn-feedback:hover { background: #3a8eef; }
 </style>
 </head>
 <body>
@@ -99,133 +290,233 @@
   <h1>VCut</h1>
   <p class="subtitle">AI 驱动的自动视频剪辑</p>
 
-  <!-- Upload State -->
-  <div id="upload-section">
-    <div class="upload-area" id="drop-zone">
-      <input type="file" id="file-input" accept="video/*">
-      <div class="upload-icon">+</div>
-      <div class="upload-text">点击或拖拽视频文件到此处</div>
-      <div class="file-name" id="file-name"></div>
-    </div>
-    <div class="goal-group">
-      <label>剪辑目标</label>
-      <input class="goal-input" id="goal-input" type="text" placeholder="例：30秒精华片段、15秒精彩集锦" value="30秒精华片段">
-    </div>
-    <button class="btn btn-primary" id="start-btn" disabled>开始剪辑</button>
+  <div class="tabs">
+    <button class="tab active" data-page="edit" onclick="switchTab('edit')">剪辑</button>
+    <button class="tab" data-page="manage" onclick="switchTab('manage')">素材管理</button>
+    <button class="tab" data-page="output" onclick="switchTab('output')">成品管理</button>
   </div>
 
-  <!-- Running State -->
-  <div class="progress-section" id="progress-section">
-    <div class="stages">
-      <span class="stage-tag" data-stage="starting">准备中</span>
-      <span class="stage-tag" data-stage="asr">语音识别</span>
-      <span class="stage-tag" data-stage="scene">场景检测</span>
-      <span class="stage-tag" data-stage="alignment">素材对齐</span>
-      <span class="stage-tag" data-stage="strategy">策略生成</span>
-      <span class="stage-tag" data-stage="render">视频渲染</span>
+  <!-- ==================== EDIT PAGE ==================== -->
+  <div class="page active" id="page-edit">
+
+    <!-- Step 1: Brand Selection -->
+    <div id="brand-section">
+      <p class="section-title">选择品牌</p>
+      <div class="brand-grid" id="brand-grid"></div>
+      <div id="no-brands" style="display:none; color:#888; text-align:center; padding:40px 0;">
+        暂无品牌数据，请先到「素材管理」创建品牌并上传视频
+      </div>
     </div>
-    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
-    <div class="stage-text" id="stage-text">准备中...</div>
+
+    <!-- Step 2: Config -->
+    <div class="config-section" id="config-section">
+      <p class="section-title">配置剪辑参数</p>
+      <div class="config-summary" id="config-summary"></div>
+
+      <div class="form-group">
+        <label>标签顺序（拖拽排序）</label>
+        <div class="label-tags" id="label-tags"></div>
+      </div>
+
+      <div class="form-group">
+        <label>生成变体数量</label>
+        <input class="form-input" id="variants-input" type="number" min="1" max="10" value="1">
+      </div>
+
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="asr-llm-toggle">
+          <label for="asr-llm-toggle">启用 ASR + LLM 智能选片</label>
+        </div>
+        <div class="goal-input" id="goal-group">
+          <label style="display:block; font-size:13px; color:#888; margin:12px 0 8px;">剪辑目标</label>
+          <input class="form-input" id="goal-input" type="text" placeholder="例：突出产品卖点的15秒短视频" value="">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="start-btn">开始剪辑</button>
+      <button class="btn-back" id="back-btn">返回选择品牌</button>
+    </div>
+
+    <!-- Step 3: Running -->
+    <div class="progress-section" id="progress-section">
+      <p class="section-title" id="progress-title">正在剪辑</p>
+      <div class="stages">
+        <span class="stage-tag" data-stage="starting">准备中</span>
+        <span class="stage-tag" data-stage="segments">素材解析</span>
+        <span class="stage-tag" data-stage="transcripts">语音识别</span>
+        <span class="stage-tag" data-stage="strategy">策略生成</span>
+        <span class="stage-tag" data-stage="render">视频渲染</span>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+      <div class="stage-text" id="stage-text">准备中...</div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div class="done-section" id="done-section">
+      <div class="done-icon">&#10003;</div>
+      <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑完成</p>
+      <p style="color:#888; font-size:14px; margin-bottom:16px;" id="done-info"></p>
+      <a class="btn-download" id="download-btn" href="#">下载视频</a>
+      <br>
+      <button class="btn-retry" onclick="resetUI()">继续剪辑</button>
+    </div>
+
+    <!-- Error -->
+    <div class="done-section" id="error-section">
+      <div class="done-icon" style="color:#ff6b6b;">&#10007;</div>
+      <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑失败</p>
+      <p class="error-text" id="error-text"></p>
+      <button class="btn-retry" onclick="resetUI()">重试</button>
+    </div>
   </div>
 
-  <!-- Done State -->
-  <div class="done-section" id="done-section">
-    <div class="done-icon">&#10003;</div>
-    <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑完成</p>
-    <p style="color:#888; font-size:14px; margin-bottom:16px;" id="done-info"></p>
-    <a class="btn-download" id="download-btn" href="#">下载视频</a>
-    <br>
-    <button class="btn-retry" onclick="resetUI()">继续剪辑</button>
+  <!-- ==================== MANAGE PAGE ==================== -->
+  <div class="page" id="page-manage">
+    <p class="section-title">素材管理</p>
+
+    <div class="new-brand-row">
+      <input id="new-brand-input" type="text" placeholder="输入新品牌名称">
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="createBrand()">创建</button>
+    </div>
+
+    <div class="brand-list" id="manage-brand-list"></div>
   </div>
 
-  <!-- Error State -->
-  <div class="done-section" id="error-section">
-    <div class="done-icon" style="color:#ff6b6b;">&#10007;</div>
-    <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑失败</p>
-    <p class="error-text" id="error-text"></p>
-    <button class="btn-retry" onclick="resetUI()">重试</button>
+  <!-- ==================== OUTPUT PAGE ==================== -->
+  <div class="page" id="page-output">
+    <p class="section-title">成品管理</p>
+    <select class="brand-select" id="output-brand-select" onchange="loadOutputs()">
+      <option value="">选择品牌查看成品</option>
+    </select>
+    <div id="output-list"></div>
   </div>
+
 </div>
 
 <script>
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const fileName = document.getElementById('file-name');
-const startBtn = document.getElementById('start-btn');
-const goalInput = document.getElementById('goal-input');
-
-let selectedFile = null;
+// ==================== STATE ====================
+let selectedBrand = null;
+let brandLabels = [];
 let currentTaskId = null;
 let pollTimer = null;
+let expandedBrand = null;
 
-// File selection
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  if (e.dataTransfer.files.length) { setFile(e.dataTransfer.files[0]); }
-});
-fileInput.addEventListener('change', () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
-
-function setFile(file) {
-  selectedFile = file;
-  fileName.textContent = file.name;
-  startBtn.disabled = false;
+// ==================== TAB SWITCH ====================
+function switchTab(page) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
+  if (page === 'manage') loadManageBrands();
+  else if (page === 'output') loadOutputBrandSelect();
+  else loadBrands();
 }
 
-// Start task
-startBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  startBtn.disabled = true;
-  startBtn.textContent = '上传中...';
-
-  const form = new FormData();
-  form.append('video', selectedFile);
-  form.append('goal', goalInput.value || '30秒精华片段');
-
+// ==================== EDIT PAGE ====================
+async function loadBrands() {
   try {
-    const resp = await fetch('/api/tasks', { method: 'POST', body: form });
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || '请求失败');
+    const resp = await fetch('/api/brands');
+    const brands = await resp.json();
+    const grid = document.getElementById('brand-grid');
+    grid.innerHTML = '';
+
+    if (brands.length === 0) {
+      document.getElementById('no-brands').style.display = 'block';
+      return;
     }
+    document.getElementById('no-brands').style.display = 'none';
+
+    brands.forEach(b => {
+      const card = document.createElement('div');
+      card.className = 'brand-card' + (b.has_xlsx ? '' : ' no-xlsx');
+      card.innerHTML = `
+        <div class="brand-name">${b.name}</div>
+        <div class="brand-info">${b.video_count} 个视频${b.has_xlsx ? '' : '（无切片方案）'}</div>
+      `;
+      if (b.has_xlsx) card.onclick = () => selectBrand(b.name, card);
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    console.error('Failed to load brands', e);
+  }
+}
+
+async function selectBrand(name, cardEl) {
+  document.querySelectorAll('.brand-card').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  selectedBrand = name;
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(name)}/xlsx`);
+    const data = await resp.json();
+    brandLabels = data.labels;
+    document.getElementById('config-summary').innerHTML =
+      `<strong>品牌：</strong>${name}<br><strong>标签：</strong>${brandLabels.join('、')}<br><strong>素材行数：</strong>${data.row_count}`;
+    renderLabelTags();
+    showSection('config');
+  } catch (e) {
+    alert('读取切片方案失败: ' + e.message);
+  }
+}
+
+function renderLabelTags() {
+  const container = document.getElementById('label-tags');
+  container.innerHTML = '';
+  brandLabels.forEach((label, idx) => {
+    const tag = document.createElement('span');
+    tag.className = 'label-tag';
+    tag.textContent = label;
+    tag.draggable = true;
+    tag.dataset.index = idx;
+    tag.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', idx); tag.classList.add('dragging'); });
+    tag.addEventListener('dragend', () => tag.classList.remove('dragging'));
+    tag.addEventListener('dragover', e => { e.preventDefault(); tag.classList.add('drag-over'); });
+    tag.addEventListener('dragleave', () => tag.classList.remove('drag-over'));
+    tag.addEventListener('drop', e => {
+      e.preventDefault(); tag.classList.remove('drag-over');
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIdx = parseInt(tag.dataset.index);
+      if (fromIdx !== toIdx) { brandLabels.splice(toIdx, 0, brandLabels.splice(fromIdx, 1)[0]); renderLabelTags(); }
+    });
+    container.appendChild(tag);
+  });
+}
+
+document.getElementById('asr-llm-toggle').addEventListener('change', function() {
+  document.getElementById('goal-group').classList.toggle('active', this.checked);
+});
+document.getElementById('back-btn').addEventListener('click', () => showSection('brand'));
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+  if (!selectedBrand || brandLabels.length === 0) return;
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true; btn.textContent = '提交中...';
+  const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1 };
+  if (document.getElementById('asr-llm-toggle').checked) body.goal = document.getElementById('goal-input').value || '';
+  try {
+    const resp = await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '请求失败'); }
     const data = await resp.json();
     currentTaskId = data.id;
-    showSection('progress');
-    pollStatus();
-  } catch (e) {
-    showError(e.message);
-  }
+    document.getElementById('progress-title').textContent = `正在剪辑 - ${selectedBrand}`;
+    showSection('progress'); pollStatus();
+  } catch (e) { showError(e.message); }
+  finally { btn.disabled = false; btn.textContent = '开始剪辑'; }
 });
 
-// Poll status
 async function pollStatus() {
   if (!currentTaskId) return;
   try {
     const resp = await fetch(`/api/tasks/${currentTaskId}`);
     const data = await resp.json();
-
     updateProgress(data.stage, data.progress);
-
-    if (data.status === 'done') {
-      showDone(data);
-      return;
-    }
-    if (data.status === 'failed') {
-      showError(data.error || '未知错误');
-      return;
-    }
+    if (data.status === 'done') { showDone(data); return; }
+    if (data.status === 'failed') { showError(data.error || '未知错误'); return; }
     pollTimer = setTimeout(pollStatus, 1500);
-  } catch (e) {
-    pollTimer = setTimeout(pollStatus, 3000);
-  }
+  } catch (e) { pollTimer = setTimeout(pollStatus, 3000); }
 }
 
-// UI updates
 function showSection(name) {
-  document.getElementById('upload-section').style.display = name === 'upload' ? 'block' : 'none';
+  document.getElementById('brand-section').style.display = name === 'brand' ? 'block' : 'none';
+  document.getElementById('config-section').classList.toggle('active', name === 'config');
   document.getElementById('progress-section').classList.toggle('active', name === 'progress');
   document.getElementById('done-section').classList.toggle('active', name === 'done');
   document.getElementById('error-section').classList.toggle('active', name === 'error');
@@ -233,15 +524,11 @@ function showSection(name) {
 
 function updateProgress(stage, pct) {
   document.getElementById('progress-bar').style.width = pct + '%';
-  const labels = {starting:'准备中',asr:'语音识别',scene:'场景检测',alignment:'素材对齐',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',strategy:'策略生成',render:'视频渲染',complete:'完成'};
   document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
-
   document.querySelectorAll('.stage-tag').forEach(el => {
-    const s = el.dataset.stage;
-    const order = ['starting','asr','scene','alignment','strategy','render'];
-    const curIdx = order.indexOf(stage);
-    const tagIdx = order.indexOf(s);
-    el.classList.toggle('done', tagIdx < curIdx);
+    const s = el.dataset.stage, order = ['starting','segments','transcripts','strategy','render'];
+    el.classList.toggle('done', order.indexOf(s) < order.indexOf(stage));
     el.classList.toggle('active', s === stage);
   });
 }
@@ -249,24 +536,367 @@ function updateProgress(stage, pct) {
 function showDone(data) {
   showSection('done');
   document.getElementById('download-btn').href = `/api/tasks/${currentTaskId}/download`;
-  document.getElementById('done-info').textContent = `目标: ${data.goal}`;
+  document.getElementById('done-info').textContent = `品牌: ${data.brand} | 标签: ${data.labels.join('、')}`;
 }
 
-function showError(msg) {
-  showSection('error');
-  document.getElementById('error-text').textContent = msg;
-}
+function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
 
 function resetUI() {
-  currentTaskId = null;
-  selectedFile = null;
-  fileInput.value = '';
-  fileName.textContent = '';
-  startBtn.disabled = true;
-  startBtn.textContent = '开始剪辑';
-  showSection('upload');
+  currentTaskId = null; selectedBrand = null; brandLabels = [];
+  document.getElementById('variants-input').value = '1';
+  document.getElementById('asr-llm-toggle').checked = false;
+  document.getElementById('goal-group').classList.remove('active');
+  document.getElementById('goal-input').value = '';
+  showSection('brand'); loadBrands();
   if (pollTimer) clearTimeout(pollTimer);
 }
+
+// ==================== MANAGE PAGE ====================
+let manageExpandedBrand = null;
+
+async function loadManageBrands() {
+  try {
+    const resp = await fetch('/api/brands');
+    const brands = await resp.json();
+    const list = document.getElementById('manage-brand-list');
+    list.innerHTML = '';
+
+    brands.forEach(b => {
+      const row = document.createElement('div');
+      row.className = 'brand-row';
+      row.id = `brand-row-${b.name}`;
+      row.innerHTML = `
+        <div class="brand-row-left">
+          <span class="brand-row-name">${b.name}</span>
+          <span class="brand-row-meta">${b.video_count} 个视频${b.has_xlsx ? ' · 有切片方案' : ''}</span>
+        </div>
+        <div class="brand-actions">
+          <button class="btn-icon" onclick="event.stopPropagation(); toggleFilePanel('${b.name}')">文件</button>
+          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteBrand('${b.name}')">删除</button>
+        </div>
+      `;
+      row.onclick = () => toggleFilePanel(b.name);
+      list.appendChild(row);
+
+      const panel = document.createElement('div');
+      panel.className = 'file-panel';
+      panel.id = `file-panel-${b.name}`;
+      panel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
+      list.appendChild(panel);
+    });
+
+    if (brands.length === 0) {
+      list.innerHTML = '<div style="color:#666; text-align:center; padding:40px 0;">暂无品牌，请在上方创建</div>';
+    }
+  } catch (e) {
+    console.error('Failed to load brands', e);
+  }
+}
+
+async function toggleFilePanel(brand) {
+  const panel = document.getElementById(`file-panel-${brand}`);
+  const row = document.getElementById(`brand-row-${brand}`);
+
+  if (manageExpandedBrand === brand) {
+    panel.classList.remove('active');
+    row.classList.remove('expanded');
+    manageExpandedBrand = null;
+    return;
+  }
+
+  // Close previous
+  if (manageExpandedBrand) {
+    const prev = document.getElementById(`file-panel-${manageExpandedBrand}`);
+    const prevRow = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    if (prev) prev.classList.remove('active');
+    if (prevRow) prevRow.classList.remove('expanded');
+  }
+
+  manageExpandedBrand = brand;
+  panel.classList.add('active');
+  row.classList.add('expanded');
+
+  // Load files
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files`);
+    const files = await resp.json();
+    renderFilePanel(brand, files);
+  } catch (e) {
+    panel.innerHTML = `<div style="color:#ff6b6b; font-size:13px;">加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderFilePanel(brand, files) {
+  const panel = document.getElementById(`file-panel-${brand}`);
+  let html = '';
+
+  files.forEach(f => {
+    const typeClass = f.type === 'xlsx' ? 'xlsx' : f.type === 'video' ? 'video' : '';
+    html += `
+      <div class="file-row">
+        <div>
+          <span class="file-name">${f.name}</span>
+          <span class="file-size">${f.size_mb} MB</span>
+          <span class="file-type ${typeClass}">${f.type}</span>
+        </div>
+        <button class="btn-delete-file" onclick="deleteFile('${brand}', '${f.name}')" title="删除">&times;</button>
+      </div>
+    `;
+  });
+
+  if (files.length === 0) {
+    html = '<div style="color:#666; font-size:13px; padding:8px 0;">暂无文件</div>';
+  }
+
+  html += `
+    <div class="upload-row">
+      <label class="upload-btn">
+        上传视频或切片方案 (.mp4 / .xlsx)
+        <input type="file" accept=".mp4,.mov,.avi,.mkv,.xlsx,.MP4,.MOV,.AVI,.MKV,.XLSX" onchange="uploadFile('${brand}', this)">
+      </label>
+    </div>
+  `;
+
+  panel.innerHTML = html;
+}
+
+async function uploadFile(brand, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files`, { method: 'POST', body: form });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    // Refresh
+    toggleFilePanel(brand);
+    setTimeout(() => toggleFilePanel(brand), 100);
+    loadManageBrands();
+  } catch (e) {
+    alert('上传失败: ' + e.message);
+  }
+  input.value = '';
+}
+
+async function deleteFile(brand, filename) {
+  if (!confirm(`确定删除 ${filename}？`)) return;
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    toggleFilePanel(brand);
+    setTimeout(() => toggleFilePanel(brand), 100);
+    loadManageBrands();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function createBrand() {
+  const input = document.getElementById('new-brand-input');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    const resp = await fetch('/api/brands', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name }) });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    input.value = '';
+    loadManageBrands();
+  } catch (e) {
+    alert('创建失败: ' + e.message);
+  }
+}
+
+async function deleteBrand(brand) {
+  if (!confirm(`确定删除品牌「${brand}」及其所有文件？此操作不可恢复。`)) return;
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    manageExpandedBrand = null;
+    loadManageBrands();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+// ==================== OUTPUT PAGE ====================
+async function loadOutputBrandSelect() {
+  const resp = await fetch('/api/brands');
+  const brands = await resp.json();
+  const sel = document.getElementById('output-brand-select');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">选择品牌查看成品</option>';
+  brands.forEach(b => {
+    sel.innerHTML += `<option value="${b.name}" ${b.name === current ? 'selected' : ''}>${b.name}</option>`;
+  });
+}
+
+async function loadOutputs() {
+  const brand = document.getElementById('output-brand-select').value;
+  const list = document.getElementById('output-list');
+  if (!brand) { list.innerHTML = ''; return; }
+
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`);
+    const outputs = await resp.json();
+
+    if (outputs.length === 0) {
+      list.innerHTML = '<div style="color:#666; text-align:center; padding:40px 0;">该品牌暂无成品视频</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    outputs.forEach((v, idx) => {
+      const card = document.createElement('div');
+      card.className = 'output-card';
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'output-header';
+      header.innerHTML = `
+        <div>
+          <span class="output-name">${v.name}</span>
+          <span class="output-size">${v.size_mb} MB</span>
+          <span class="output-time">${v.created_at || ''}</span>
+          ${v.feedback ? '<span class="plan-role" style="background:#1a3c2a;color:#4caf50;margin-left:8px;">已评价</span>' : ''}
+        </div>
+        <div class="output-actions">
+          <button class="btn-icon" onclick="event.stopPropagation(); window.open('/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(v.name)}/download')">下载</button>
+          <button class="btn-icon" onclick="event.stopPropagation(); renameOutput('${brand}', '${v.name}')">重命名</button>
+          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteOutput('${brand}', '${v.name}')">删除</button>
+        </div>
+      `;
+      header.onclick = () => toggleOutputBody(idx);
+      card.appendChild(header);
+
+      // Body
+      const body = document.createElement('div');
+      body.className = 'output-body';
+      body.id = `output-body-${idx}`;
+
+      // Edit plan
+      let planHtml = '';
+      if (v.plan && Array.isArray(v.plan) && v.plan.length > 0) {
+        planHtml = `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>
+            <table class="plan-table">
+              <tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>
+              ${v.plan.map((item, i) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td>${item.video_id || '-'}</td>
+                  <td>${fmtTime(item.start)} - ${fmtTime(item.end)}</td>
+                  <td>${(item.duration || (item.end - item.start)).toFixed(1)}s</td>
+                  <td><span class="plan-role">${item.label || '-'}</span></td>
+                  <td class="plan-reason">${item.reason || '-'}</td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+        `;
+      } else {
+        planHtml = '<div style="color:#666;font-size:13px;margin-bottom:12px;">无剪辑方案数据</div>';
+      }
+
+      // Feedback form
+      const fb = v.feedback || {};
+      const fbTags = ['节奏好', '内容准确', '画面流畅', '转场自然', '需要改进', '节奏拖沓', '内容不准', '画面跳跃'];
+      const selectedTags = fb.tags || [];
+
+      body.innerHTML = planHtml + `
+        <div class="feedback-section">
+          <div class="feedback-title">评价反馈</div>
+          <div class="rating-stars" id="stars-${idx}">
+            ${[1,2,3,4,5].map(n => `<button class="star ${n <= (fb.rating||0) ? 'filled' : ''}" onclick="setRating(${idx},${n})">&#9733;</button>`).join('')}
+          </div>
+          <div class="feedback-tags" id="fbtags-${idx}">
+            ${fbTags.map(t => `<span class="feedback-tag ${selectedTags.includes(t) ? 'selected' : ''}" onclick="toggleFbTag(this)" data-tag="${t}">${t}</span>`).join('')}
+          </div>
+          <textarea class="feedback-textarea" id="fbtext-${idx}" placeholder="输入对这个视频的意见和建议...">${fb.comment || ''}</textarea>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn-feedback" onclick="submitFeedback('${brand}', '${v.name}', ${idx})">提交反馈</button>
+            <span class="feedback-saved" id="fbsaved-${idx}">已保存</span>
+          </div>
+        </div>
+      `;
+
+      card.appendChild(body);
+      list.appendChild(card);
+    });
+  } catch (e) {
+    list.innerHTML = `<div style="color:#ff6b6b;">加载失败: ${e.message}</div>`;
+  }
+}
+
+function fmtTime(sec) {
+  if (sec == null) return '-';
+  const m = Math.floor(sec / 60);
+  const s = (sec % 60).toFixed(1);
+  return m > 0 ? `${m}:${s.padStart(4,'0')}` : `${s}s`;
+}
+
+function toggleOutputBody(idx) {
+  const body = document.getElementById(`output-body-${idx}`);
+  body.classList.toggle('active');
+}
+
+function setRating(idx, n) {
+  const stars = document.querySelectorAll(`#stars-${idx} .star`);
+  stars.forEach((s, i) => s.classList.toggle('filled', i < n));
+}
+
+function toggleFbTag(el) {
+  el.classList.toggle('selected');
+}
+
+async function submitFeedback(brand, filename, idx) {
+  const rating = document.querySelectorAll(`#stars-${idx} .star.filled`).length;
+  const comment = document.getElementById(`fbtext-${idx}`).value;
+  const tags = [...document.querySelectorAll(`#fbtags-${idx} .feedback-tag.selected`)].map(el => el.dataset.tag);
+
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(filename)}/feedback`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ rating, comment, tags }),
+    });
+    if (!resp.ok) throw new Error('保存失败');
+    const saved = document.getElementById(`fbsaved-${idx}`);
+    saved.style.display = 'inline';
+    setTimeout(() => saved.style.display = 'none', 2000);
+  } catch (e) {
+    alert('提交失败: ' + e.message);
+  }
+}
+
+async function renameOutput(brand, oldName) {
+  const newName = prompt('输入新名称:', oldName);
+  if (!newName || newName === oldName) return;
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(oldName)}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: newName }),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    loadOutputs();
+  } catch (e) {
+    alert('重命名失败: ' + e.message);
+  }
+}
+
+async function deleteOutput(brand, filename) {
+  if (!confirm(`确定删除成品视频 ${filename}？`)) return;
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    loadOutputs();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+// Init
+loadBrands();
 </script>
 </body>
 </html>

@@ -128,13 +128,16 @@ def run_manual_pipeline(
     _append_signature_history(signature_history_path, kept_signatures)
 
     render_config = dict(config.get("render", {}))
-    for idx, plan in enumerate(plans, start=1):
-        plan_path = artifacts_dir / ("edit_plan.json" if len(plans) == 1 else f"edit_plan_{idx:03d}.json")
+    for idx, plan in enumerate(plans):
+        # Match plan naming to output video naming convention
+        output_for_variant = variant_output_path(output_video, idx + 1)
+        video_stem = Path(output_for_variant).stem
+        plan_path = artifacts_dir / f"edit_plan_{video_stem}.json"
         write_edit_plan_json(plan, plan_path)
         if bool(render_config.get("enabled", True)):
             render_result = render_video_fn(
                 edit_plan=plan,
-                output_video=variant_output_path(output_video, idx),
+                output_video=output_for_variant,
                 render_config=render_config,
             )
             adjusted_plan = render_result.get("adjusted_edit_plan")

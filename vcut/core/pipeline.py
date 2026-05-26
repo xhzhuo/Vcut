@@ -32,6 +32,7 @@ def run_pipeline(
     manual_max_duration: float | None = None,
     manual_use_asr_llm: bool = False,
     manual_goal: str | None = None,
+    group_name: str | None = None,
 ) -> None:
     """Run pipeline in manual or auto mode and write outputs/artifacts."""
     config = load_config(config_path)
@@ -40,7 +41,8 @@ def run_pipeline(
     if manual_xlsx:
         labels = [str(label).strip() for label in (manual_labels or []) if str(label).strip()]
         video_dir = manual_video_dir or str(Path(manual_xlsx).resolve().parent)
-        group_name = infer_group_from_source_paths([manual_xlsx, video_dir])
+        if not group_name:
+            group_name = infer_group_from_source_paths([manual_xlsx, video_dir])
         artifacts_dir = resolve_grouped_artifacts_dir(base_artifacts_dir, group_name)
         resolved_output_video = resolve_output_video_path(
             output_video,
@@ -65,7 +67,8 @@ def run_pipeline(
     if not normalized_inputs:
         raise ValueError("No input videos provided.")
 
-    group_name = infer_group_from_source_paths(normalized_inputs)
+    if not group_name:
+        group_name = infer_group_from_source_paths(normalized_inputs)
     artifacts_dir = resolve_grouped_artifacts_dir(base_artifacts_dir, group_name)
     resolved_output_video = resolve_output_video_path(
         output_video,
