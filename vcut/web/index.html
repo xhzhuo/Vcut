@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VCut - AI 视频剪辑</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f0f0f; color: #e0e0e0;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    background: #1a1a1a; border-radius: 16px; padding: 40px;
+    width: 100%; max-width: 520px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { color: #888; font-size: 14px; margin-bottom: 32px; }
+
+  /* Upload area */
+  .upload-area {
+    border: 2px dashed #333; border-radius: 12px; padding: 40px 20px;
+    text-align: center; cursor: pointer; transition: border-color 0.2s;
+    margin-bottom: 20px;
+  }
+  .upload-area:hover, .upload-area.dragover { border-color: #4a9eff; }
+  .upload-area input { display: none; }
+  .upload-icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-text { color: #888; font-size: 14px; }
+  .file-name { color: #4a9eff; font-size: 14px; margin-top: 8px; }
+
+  /* Goal input */
+  .goal-group { margin-bottom: 24px; }
+  .goal-group label { display: block; font-size: 13px; color: #888; margin-bottom: 8px; }
+  .goal-input {
+    width: 100%; padding: 12px 16px; background: #111; border: 1px solid #333;
+    border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .goal-input:focus { border-color: #4a9eff; }
+
+  /* Button */
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 8px;
+    font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-primary { background: #4a9eff; color: #fff; }
+  .btn-primary:hover { background: #3a8eef; }
+  .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+  /* Progress */
+  .progress-section { display: none; }
+  .progress-section.active { display: block; }
+  .progress-bar-bg {
+    width: 100%; height: 8px; background: #222; border-radius: 4px;
+    overflow: hidden; margin: 16px 0;
+  }
+  .progress-bar {
+    height: 100%; background: linear-gradient(90deg, #4a9eff, #6cb8ff);
+    border-radius: 4px; transition: width 0.5s ease;
+    width: 0%;
+  }
+  .stage-text { color: #888; font-size: 14px; margin-bottom: 24px; }
+
+  /* Done */
+  .done-section { display: none; text-align: center; }
+  .done-section.active { display: block; }
+  .done-icon { font-size: 64px; margin-bottom: 16px; }
+  .btn-download {
+    background: #2d7d46; color: #fff; display: inline-block;
+    padding: 12px 32px; border-radius: 8px; text-decoration: none;
+    font-weight: 600; transition: background 0.2s; margin-top: 16px;
+  }
+  .btn-download:hover { background: #236b38; }
+  .btn-retry {
+    background: transparent; color: #888; border: 1px solid #333;
+    display: inline-block; padding: 10px 24px; border-radius: 8px;
+    text-decoration: none; font-size: 14px; margin-top: 12px; cursor: pointer;
+  }
+  .btn-retry:hover { border-color: #555; color: #ccc; }
+
+  /* Error */
+  .error-text { color: #ff6b6b; font-size: 14px; margin: 12px 0; }
+
+  /* Stage labels */
+  .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stage-tag {
+    font-size: 12px; padding: 4px 10px; border-radius: 12px;
+    background: #222; color: #666;
+  }
+  .stage-tag.active { background: #1a3a5c; color: #4a9eff; }
+  .stage-tag.done { background: #1a3c2a; color: #4caf50; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>VCut</h1>
+  <p class="subtitle">AI 驱动的自动视频剪辑</p>
+
+  <!-- Upload State -->
+  <div id="upload-section">
+    <div class="upload-area" id="drop-zone">
+      <input type="file" id="file-input" accept="video/*">
+      <div class="upload-icon">+</div>
+      <div class="upload-text">点击或拖拽视频文件到此处</div>
+      <div class="file-name" id="file-name"></div>
+    </div>
+    <div class="goal-group">
+      <label>剪辑目标</label>
+      <input class="goal-input" id="goal-input" type="text" placeholder="例：30秒精华片段、15秒精彩集锦" value="30秒精华片段">
+    </div>
+    <button class="btn btn-primary" id="start-btn" disabled>开始剪辑</button>
+  </div>
+
+  <!-- Running State -->
+  <div class="progress-section" id="progress-section">
+    <div class="stages">
+      <span class="stage-tag" data-stage="starting">准备中</span>
+      <span class="stage-tag" data-stage="asr">语音识别</span>
+      <span class="stage-tag" data-stage="scene">场景检测</span>
+      <span class="stage-tag" data-stage="alignment">素材对齐</span>
+      <span class="stage-tag" data-stage="strategy">策略生成</span>
+      <span class="stage-tag" data-stage="render">视频渲染</span>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="stage-text" id="stage-text">准备中...</div>
+  </div>
+
+  <!-- Done State -->
+  <div class="done-section" id="done-section">
+    <div class="done-icon">&#10003;</div>
+    <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑完成</p>
+    <p style="color:#888; font-size:14px; margin-bottom:16px;" id="done-info"></p>
+    <a class="btn-download" id="download-btn" href="#">下载视频</a>
+    <br>
+    <button class="btn-retry" onclick="resetUI()">继续剪辑</button>
+  </div>
+
+  <!-- Error State -->
+  <div class="done-section" id="error-section">
+    <div class="done-icon" style="color:#ff6b6b;">&#10007;</div>
+    <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑失败</p>
+    <p class="error-text" id="error-text"></p>
+    <button class="btn-retry" onclick="resetUI()">重试</button>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const fileName = document.getElementById('file-name');
+const startBtn = document.getElementById('start-btn');
+const goalInput = document.getElementById('goal-input');
+
+let selectedFile = null;
+let currentTaskId = null;
+let pollTimer = null;
+
+// File selection
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) { setFile(e.dataTransfer.files[0]); }
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
+
+function setFile(file) {
+  selectedFile = file;
+  fileName.textContent = file.name;
+  startBtn.disabled = false;
+}
+
+// Start task
+startBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  startBtn.disabled = true;
+  startBtn.textContent = '上传中...';
+
+  const form = new FormData();
+  form.append('video', selectedFile);
+  form.append('goal', goalInput.value || '30秒精华片段');
+
+  try {
+    const resp = await fetch('/api/tasks', { method: 'POST', body: form });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || '请求失败');
+    }
+    const data = await resp.json();
+    currentTaskId = data.id;
+    showSection('progress');
+    pollStatus();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+// Poll status
+async function pollStatus() {
+  if (!currentTaskId) return;
+  try {
+    const resp = await fetch(`/api/tasks/${currentTaskId}`);
+    const data = await resp.json();
+
+    updateProgress(data.stage, data.progress);
+
+    if (data.status === 'done') {
+      showDone(data);
+      return;
+    }
+    if (data.status === 'failed') {
+      showError(data.error || '未知错误');
+      return;
+    }
+    pollTimer = setTimeout(pollStatus, 1500);
+  } catch (e) {
+    pollTimer = setTimeout(pollStatus, 3000);
+  }
+}
+
+// UI updates
+function showSection(name) {
+  document.getElementById('upload-section').style.display = name === 'upload' ? 'block' : 'none';
+  document.getElementById('progress-section').classList.toggle('active', name === 'progress');
+  document.getElementById('done-section').classList.toggle('active', name === 'done');
+  document.getElementById('error-section').classList.toggle('active', name === 'error');
+}
+
+function updateProgress(stage, pct) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  const labels = {starting:'准备中',asr:'语音识别',scene:'场景检测',alignment:'素材对齐',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
+
+  document.querySelectorAll('.stage-tag').forEach(el => {
+    const s = el.dataset.stage;
+    const order = ['starting','asr','scene','alignment','strategy','render'];
+    const curIdx = order.indexOf(stage);
+    const tagIdx = order.indexOf(s);
+    el.classList.toggle('done', tagIdx < curIdx);
+    el.classList.toggle('active', s === stage);
+  });
+}
+
+function showDone(data) {
+  showSection('done');
+  document.getElementById('download-btn').href = `/api/tasks/${currentTaskId}/download`;
+  document.getElementById('done-info').textContent = `目标: ${data.goal}`;
+}
+
+function showError(msg) {
+  showSection('error');
+  document.getElementById('error-text').textContent = msg;
+}
+
+function resetUI() {
+  currentTaskId = null;
+  selectedFile = null;
+  fileInput.value = '';
+  fileName.textContent = '';
+  startBtn.disabled = true;
+  startBtn.textContent = '开始剪辑';
+  showSection('upload');
+  if (pollTimer) clearTimeout(pollTimer);
+}
+</script>
+</body>
+</html>

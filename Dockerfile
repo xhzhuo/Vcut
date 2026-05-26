@@ -13,4 +13,7 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trus
 
 COPY . .
 
-ENTRYPOINT ["python", "main.py"]
+EXPOSE 8080
+
+# Default: web mode. Override with: docker run vcut python main.py ...
+CMD ["uvicorn", "vcut.web.app:app", "--host", "0.0.0.0", "--port", "8080"]
