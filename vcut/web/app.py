@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -146,7 +147,7 @@ def _run_manual_pipeline(task: Task) -> None:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         cmd = [
-            "python", "main.py",
+            sys.executable, "main.py",
             "--manual-xlsx", xlsx_path,
             "--manual-video-dir", video_dir,
             "--labels", *task.labels,
