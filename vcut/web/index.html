@@ -14,7 +14,7 @@
   }
   .card {
     background: #1a1a1a; border-radius: 16px; padding: 40px;
-    width: 100%; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    width: 860px; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
   .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
@@ -45,6 +45,18 @@
   .brand-info { color: #888; font-size: 13px; }
   .no-xlsx { opacity: 0.5; pointer-events: none; }
 
+  /* Mode selector */
+  .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+  .mode-card {
+    background: #222; border: 2px solid #333; border-radius: 10px;
+    padding: 14px; cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .mode-card:hover { border-color: #4a9eff; background: #1a2a3a; }
+  .mode-card.selected { border-color: #4a9eff; background: #1a3a5c; }
+  .mode-icon { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #4a9eff; }
+  .mode-name { font-size: 14px; font-weight: 600; color: #e0e0e0; margin-bottom: 2px; }
+  .mode-desc { font-size: 12px; color: #888; }
+
   /* Config form */
   .config-section { display: none; }
   .config-section.active { display: block; }
@@ -56,6 +68,7 @@
     transition: border-color 0.2s;
   }
   .form-input:focus { border-color: #4a9eff; }
+  textarea.form-input { resize: vertical; font-family: inherit; line-height: 1.5; }
   .label-tags { display: flex; flex-wrap: wrap; gap: 8px; }
   .label-tag {
     font-size: 13px; padding: 6px 14px; border-radius: 16px;
@@ -71,6 +84,20 @@
   .checkbox-group label { margin: 0; font-size: 14px; color: #ccc; }
   .goal-input { margin-top: 12px; display: none; }
   .goal-input.active { display: block; }
+
+  /* Toggle Switch */
+  .toggle-switch { position: relative; width: 44px; height: 24px; display: inline-block; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: #333; border-radius: 24px; cursor: pointer; transition: all 0.2s;
+  }
+  .toggle-slider::before {
+    content: ""; position: absolute; width: 18px; height: 18px;
+    left: 3px; bottom: 3px; background: #888; border-radius: 50%; transition: all 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background: #4a9eff; }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
 
   /* Buttons */
   .btn {
@@ -127,7 +154,16 @@
     text-decoration: none; font-size: 14px; margin-top: 12px; cursor: pointer;
   }
   .btn-retry:hover { border-color: #555; color: #ccc; }
-  .error-text { color: #ff6b6b; font-size: 14px; margin: 12px 0; }
+  .error-text { color: #ff6b6b; font-size: 13px; margin: 12px 0; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; background: rgba(255,107,107,0.08); border-radius: 8px; padding: 12px 16px; text-align: left; font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .storage-bar { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; font-size: 13px; color: #aaa; }
+  .storage-bar .bar-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .storage-bar .bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+  .storage-bar .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+  .storage-bar .bar-fill.ok { background: #4a9eff; }
+  .storage-bar .bar-fill.warn { background: #f0a020; }
+  .storage-bar .bar-fill.full { background: #ff6b6b; }
+  .storage-bar .bar-label { min-width: 80px; }
+  .storage-bar .bar-value { min-width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
 
   /* Section titles */
   .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
@@ -282,13 +318,56 @@
     transition: background 0.2s;
   }
   .btn-feedback:hover { background: #3a8eef; }
+
+  /* Login Page */
+  #login-page { display: none; }
+  #login-page.active { display: flex; }
+  #app { display: none; }
+  #app.active { display: block; }
+  .login-card {
+    background: #1a1a1a; border-radius: 16px; padding: 48px 40px;
+    width: 100%; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    text-align: center;
+  }
+  .login-card h1 { margin-bottom: 8px; }
+  .login-card .subtitle { margin-bottom: 32px; }
+  .login-error { color: #ff5555; font-size: 13px; margin-bottom: 12px; display: none; }
+  .logout-btn {
+    background: transparent; color: #888; border: 1px solid #333;
+    padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    transition: all 0.2s; margin-left: auto;
+  }
+  .logout-btn:hover { color: #e0e0e0; border-color: #666; }
 </style>
 </head>
 <body>
 
+<!-- Login Page -->
+<div id="login-page" style="min-height:100vh; align-items:center; justify-content:center;">
+  <div class="login-card">
+    <h1>VCut</h1>
+    <p class="subtitle">AI 驱动的自动视频剪辑</p>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group">
+      <input class="form-input" id="login-user" type="text" placeholder="用户名" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <input class="form-input" id="login-pass" type="password" placeholder="密码" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" id="login-btn">登录</button>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app">
 <div class="card">
-  <h1>VCut</h1>
-  <p class="subtitle">AI 驱动的自动视频剪辑</p>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <div>
+      <h1>VCut</h1>
+      <p class="subtitle">AI 驱动的自动视频剪辑</p>
+    </div>
+    <button class="logout-btn" id="logout-btn" style="display:none;" onclick="doLogout()">登出</button>
+  </div>
 
   <div class="tabs">
     <button class="tab active" data-page="edit" onclick="switchTab('edit')">剪辑</button>
@@ -310,6 +389,7 @@
 
     <!-- Step 2: Config -->
     <div class="config-section" id="config-section">
+      <div class="storage-bar" id="token-usage-bar"></div>
       <p class="section-title">配置剪辑参数</p>
       <div class="config-summary" id="config-summary"></div>
 
@@ -319,19 +399,47 @@
       </div>
 
       <div class="form-group">
+        <label>选片模式</label>
+        <div class="mode-grid" id="mode-grid">
+          <div class="mode-card selected" data-mode="asr" onclick="selectMode('asr')">
+            <div class="mode-icon">A</div>
+            <div class="mode-name">纯 ASR</div>
+            <div class="mode-desc">仅语音文字，速度最快</div>
+          </div>
+          <div class="mode-card" data-mode="asr+video" onclick="selectMode('asr+video')">
+            <div class="mode-icon">A+V</div>
+            <div class="mode-name">ASR + 视频理解</div>
+            <div class="mode-desc">文字 + 视觉，效果最好</div>
+          </div>
+          <div class="mode-card" data-mode="video" onclick="selectMode('video')">
+            <div class="mode-icon">V</div>
+            <div class="mode-name">纯视频理解</div>
+            <div class="mode-desc">一次调用搞定，性价比高</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
         <label>生成变体数量</label>
         <input class="form-input" id="variants-input" type="number" min="1" max="10" value="1">
       </div>
 
       <div class="form-group">
-        <div class="checkbox-group">
-          <input type="checkbox" id="asr-llm-toggle">
-          <label for="asr-llm-toggle">启用 ASR + LLM 智能选片</label>
+        <label>剪辑目标</label>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <select class="form-input" id="prompt-select" style="flex:1;" onchange="applyPrompt()">
+            <option value="">选择预设 Prompt（可选）</option>
+          </select>
         </div>
-        <div class="goal-input" id="goal-group">
-          <label style="display:block; font-size:13px; color:#888; margin:12px 0 8px;">剪辑目标</label>
-          <input class="form-input" id="goal-input" type="text" placeholder="例：突出产品卖点的15秒短视频" value="">
-        </div>
+        <textarea class="form-input" id="goal-input" rows="3" placeholder="描述剪辑目标，例如：突出产品卖点的15秒短视频，台词衔接自然"></textarea>
+      </div>
+
+      <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+        <label class="toggle-switch">
+          <input type="checkbox" id="unique-src-toggle">
+          <span class="toggle-slider"></span>
+        </label>
+        <label for="unique-src-toggle" style="margin:0; cursor:pointer;">每个标签来自不同视频来源</label>
       </div>
 
       <button class="btn btn-primary" id="start-btn">开始剪辑</button>
@@ -345,6 +453,7 @@
         <span class="stage-tag" data-stage="starting">准备中</span>
         <span class="stage-tag" data-stage="segments">素材解析</span>
         <span class="stage-tag" data-stage="transcripts">语音识别</span>
+        <span class="stage-tag" data-stage="visual">视觉理解</span>
         <span class="stage-tag" data-stage="strategy">策略生成</span>
         <span class="stage-tag" data-stage="render">视频渲染</span>
       </div>
@@ -366,7 +475,7 @@
     <div class="done-section" id="error-section">
       <div class="done-icon" style="color:#ff6b6b;">&#10007;</div>
       <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑失败</p>
-      <p class="error-text" id="error-text"></p>
+      <pre class="error-text" id="error-text"></pre>
       <button class="btn-retry" onclick="resetUI()">重试</button>
     </div>
   </div>
@@ -374,6 +483,7 @@
   <!-- ==================== MANAGE PAGE ==================== -->
   <div class="page" id="page-manage">
     <p class="section-title">素材管理</p>
+    <div class="storage-bar" id="storage-inputs"></div>
 
     <div class="new-brand-row">
       <input id="new-brand-input" type="text" placeholder="输入新品牌名称">
@@ -386,6 +496,7 @@
   <!-- ==================== OUTPUT PAGE ==================== -->
   <div class="page" id="page-output">
     <p class="section-title">成品管理</p>
+    <div class="storage-bar" id="storage-output"></div>
     <select class="brand-select" id="output-brand-select" onchange="loadOutputs()">
       <option value="">选择品牌查看成品</option>
     </select>
@@ -393,22 +504,93 @@
   </div>
 
 </div>
+</div><!-- /app -->
 
 <script>
+// ==================== AUTH ====================
+function showLogin() {
+  document.getElementById('login-page').classList.add('active');
+  document.getElementById('app').classList.remove('active');
+}
+function showApp() {
+  document.getElementById('login-page').classList.remove('active');
+  document.getElementById('app').classList.add('active');
+  document.getElementById('logout-btn').style.display = '';
+}
+
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = '登录中...'; errEl.style.display = 'none';
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('login-user').value,
+        password: document.getElementById('login-pass').value,
+      })
+    });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || '登录失败'); }
+    showApp();
+    loadBrands();
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  } finally { btn.disabled = false; btn.textContent = '登录'; }
+});
+
+document.getElementById('login-pass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  showLogin();
+}
+
+// Intercept 401 responses
+const _origFetch = window.fetch;
+window.fetch = async function(...args) {
+  const resp = await _origFetch.apply(this, args);
+  if (resp.status === 401 && !args[0].includes('/api/login') && !args[0].includes('/api/auth/status')) {
+    showLogin();
+    throw new Error('未登录');
+  }
+  return resp;
+};
+
+// Check auth status on load
+(async () => {
+  try {
+    const resp = await _origFetch('/api/auth/status');
+    const data = await resp.json();
+    if (data.logged_in) { showApp(); loadBrands(); }
+    else { showLogin(); }
+  } catch { showLogin(); }
+})();
+
 // ==================== STATE ====================
 let selectedBrand = null;
 let brandLabels = [];
 let currentTaskId = null;
 let pollTimer = null;
 let expandedBrand = null;
+let selectedMode = 'asr';
 
 // ==================== TAB SWITCH ====================
 function switchTab(page) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
-  if (page === 'manage') loadManageBrands();
-  else if (page === 'output') loadOutputBrandSelect();
-  else loadBrands();
+  if (page === 'manage') { loadStorage(); loadManageBrands(); }
+  else if (page === 'output') { loadStorage(); loadOutputBrandSelect(); }
+  else { loadBrands(); if (selectedBrand) loadPrompts(selectedBrand); }
+}
+
+function selectMode(mode) {
+  selectedMode = mode;
+  document.querySelectorAll('.mode-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.mode === mode);
+  });
 }
 
 // ==================== EDIT PAGE ====================
@@ -451,7 +633,9 @@ async function selectBrand(name, cardEl) {
     document.getElementById('config-summary').innerHTML =
       `<strong>品牌：</strong>${name}<br><strong>标签：</strong>${brandLabels.join('、')}<br><strong>素材行数：</strong>${data.row_count}`;
     renderLabelTags();
+    loadPrompts(name);
     showSection('config');
+    loadStorage();
   } catch (e) {
     alert('读取切片方案失败: ' + e.message);
   }
@@ -480,17 +664,16 @@ function renderLabelTags() {
   });
 }
 
-document.getElementById('asr-llm-toggle').addEventListener('change', function() {
-  document.getElementById('goal-group').classList.toggle('active', this.checked);
-});
 document.getElementById('back-btn').addEventListener('click', () => showSection('brand'));
 
 document.getElementById('start-btn').addEventListener('click', async () => {
   if (!selectedBrand || brandLabels.length === 0) return;
   const btn = document.getElementById('start-btn');
   btn.disabled = true; btn.textContent = '提交中...';
-  const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1 };
-  if (document.getElementById('asr-llm-toggle').checked) body.goal = document.getElementById('goal-input').value || '';
+  const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1, selection_mode: selectedMode };
+  const goal = document.getElementById('goal-input').value.trim();
+  if (goal) body.goal = goal;
+  body.unique_src_video = document.getElementById('unique-src-toggle').checked;
   try {
     const resp = await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '请求失败'); }
@@ -524,10 +707,10 @@ function showSection(name) {
 
 function updateProgress(stage, pct) {
   document.getElementById('progress-bar').style.width = pct + '%';
-  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',visual:'视觉理解',strategy:'策略生成',render:'视频渲染',complete:'完成'};
   document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
   document.querySelectorAll('.stage-tag').forEach(el => {
-    const s = el.dataset.stage, order = ['starting','segments','transcripts','strategy','render'];
+    const s = el.dataset.stage, order = ['starting','segments','transcripts','visual','strategy','render'];
     el.classList.toggle('done', order.indexOf(s) < order.indexOf(stage));
     el.classList.toggle('active', s === stage);
   });
@@ -537,6 +720,7 @@ function showDone(data) {
   showSection('done');
   document.getElementById('download-btn').href = `/api/tasks/${currentTaskId}/download`;
   document.getElementById('done-info').textContent = `品牌: ${data.brand} | 标签: ${data.labels.join('、')}`;
+  loadStorage(); // refresh token usage after task completes
 }
 
 function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
@@ -544,9 +728,9 @@ function showError(msg) { showSection('error'); document.getElementById('error-t
 function resetUI() {
   currentTaskId = null; selectedBrand = null; brandLabels = [];
   document.getElementById('variants-input').value = '1';
-  document.getElementById('asr-llm-toggle').checked = false;
-  document.getElementById('goal-group').classList.remove('active');
   document.getElementById('goal-input').value = '';
+  document.getElementById('prompt-select').innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+  selectMode('asr');
   showSection('brand'); loadBrands();
   if (pollTimer) clearTimeout(pollTimer);
 }
@@ -572,6 +756,7 @@ async function loadManageBrands() {
         </div>
         <div class="brand-actions">
           <button class="btn-icon" onclick="event.stopPropagation(); toggleFilePanel('${b.name}')">文件</button>
+          <button class="btn-icon" onclick="event.stopPropagation(); togglePromptPanel('${b.name}')">Prompt</button>
           <button class="btn-icon danger" onclick="event.stopPropagation(); deleteBrand('${b.name}')">删除</button>
         </div>
       `;
@@ -583,6 +768,12 @@ async function loadManageBrands() {
       panel.id = `file-panel-${b.name}`;
       panel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
       list.appendChild(panel);
+
+      const promptPanel = document.createElement('div');
+      promptPanel.className = 'file-panel';
+      promptPanel.id = `prompt-panel-${b.name}`;
+      promptPanel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
+      list.appendChild(promptPanel);
     });
 
     if (brands.length === 0) {
@@ -691,6 +882,122 @@ async function deleteFile(brand, filename) {
   }
 }
 
+// ==================== PROMPT MANAGEMENT ====================
+let manageExpandedPrompt = null;
+
+async function togglePromptPanel(brand) {
+  const panel = document.getElementById(`prompt-panel-${brand}`);
+  const row = document.getElementById(`brand-row-${brand}`);
+
+  if (manageExpandedPrompt === brand) {
+    panel.classList.remove('active');
+    row.classList.remove('expanded');
+    manageExpandedPrompt = null;
+    return;
+  }
+
+  if (manageExpandedPrompt) {
+    const prev = document.getElementById(`prompt-panel-${manageExpandedPrompt}`);
+    const prevRow = document.getElementById(`brand-row-${manageExpandedPrompt}`);
+    if (prev) prev.classList.remove('active');
+    if (prevRow) prevRow.classList.remove('expanded');
+  }
+
+  // Close file panel too
+  if (manageExpandedBrand) {
+    const fp = document.getElementById(`file-panel-${manageExpandedBrand}`);
+    const fr = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    if (fp) fp.classList.remove('active');
+    if (fr) fr.classList.remove('expanded');
+    manageExpandedBrand = null;
+  }
+
+  manageExpandedPrompt = brand;
+  panel.classList.add('active');
+  row.classList.add('expanded');
+
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`);
+    const prompts = await resp.json();
+    renderPromptPanel(brand, prompts);
+  } catch (e) {
+    panel.innerHTML = `<div style="color:#ff6b6b; font-size:13px;">加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderPromptPanel(brand, prompts) {
+  const panel = document.getElementById(`prompt-panel-${brand}`);
+  let html = '';
+
+  prompts.forEach(p => {
+    html += `
+      <div class="file-row" style="align-items:flex-start;">
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:500; margin-bottom:4px;">${p.name}</div>
+          <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${p.content}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+          <button class="btn-icon" onclick="editPrompt('${brand}', '${p.id}', '${encodeURIComponent(p.name)}', '${encodeURIComponent(p.content)}')">编辑</button>
+          <button class="btn-icon danger" onclick="deletePrompt('${brand}', '${p.id}')">删除</button>
+        </div>
+      </div>`;
+  });
+
+  if (prompts.length === 0) {
+    html = '<div style="color:#888; font-size:13px; padding:8px 0;">暂无预设 Prompt</div>';
+  }
+
+  html += `
+    <div style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
+      <div style="font-size:13px; color:#aaa; margin-bottom:8px;">添加新 Prompt</div>
+      <input class="form-input" id="new-prompt-name-${brand}" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
+      <textarea class="form-input" id="new-prompt-content-${brand}" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="addPrompt('${brand}')">添加</button>
+    </div>`;
+
+  panel.innerHTML = html;
+}
+
+async function addPrompt(brand) {
+  const name = document.getElementById(`new-prompt-name-${brand}`).value.trim();
+  const content = document.getElementById(`new-prompt-content-${brand}`).value.trim();
+  if (!name || !content) { alert('名称和内容不能为空'); return; }
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name, content })
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
+    togglePromptPanel(brand);
+    setTimeout(() => togglePromptPanel(brand), 100);
+  } catch (e) { alert('添加失败: ' + e.message); }
+}
+
+function editPrompt(brand, pid, encName, encContent) {
+  const name = decodeURIComponent(encName);
+  const content = decodeURIComponent(encContent);
+  const newName = prompt('Prompt 名称', name);
+  if (newName === null) return;
+  const newContent = prompt('Prompt 内容', content);
+  if (newContent === null) return;
+  fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name: newName, content: newContent })
+  }).then(() => {
+    togglePromptPanel(brand);
+    setTimeout(() => togglePromptPanel(brand), 100);
+  }).catch(e => alert('编辑失败: ' + e.message));
+}
+
+async function deletePrompt(brand, pid) {
+  if (!confirm('确定删除此 Prompt？')) return;
+  try {
+    await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
+    togglePromptPanel(brand);
+    setTimeout(() => togglePromptPanel(brand), 100);
+  } catch (e) { alert('删除失败: ' + e.message); }
+}
+
 async function createBrand() {
   const input = document.getElementById('new-brand-input');
   const name = input.value.trim();
@@ -717,6 +1024,78 @@ async function deleteBrand(brand) {
   }
 }
 
+// ==================== STORAGE ====================
+function _renderStorageBar(containerId, usedMb, limitMb, label) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const pct = limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
+  const cls = pct >= 90 ? 'full' : pct >= 70 ? 'warn' : 'ok';
+  const usedStr = usedMb >= 1024 ? (usedMb / 1024).toFixed(1) + ' GB' : Math.round(usedMb) + ' MB';
+  const limitStr = limitMb >= 1024 ? (limitMb / 1024).toFixed(0) + ' GB' : Math.round(limitMb) + ' MB';
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+      <span>${label} 存储</span><span class="bar-value">${usedStr} / ${limitStr}</span>
+    </div>
+    <div class="bar-row">
+      <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+}
+
+async function loadStorage() {
+  try {
+    const resp = await fetch('/api/storage');
+    const d = await resp.json();
+    _renderStorageBar('storage-inputs', d.inputs.used_mb, d.inputs.limit_mb, '素材');
+    _renderStorageBar('storage-output', d.output.used_mb, d.output.limit_mb, '成品');
+    if (d.tokens) _renderTokenBar('token-usage-bar', d.tokens.used, d.tokens.limit, d.tokens.api_calls);
+  } catch (e) { console.error('loadStorage failed', e); }
+}
+
+function _formatTokens(n) {
+  if (n >= 100000000) return (n / 100000000).toFixed(1) + ' 亿';
+  if (n >= 10000) return (n / 10000).toFixed(1) + ' 万';
+  return n.toLocaleString();
+}
+
+function _renderTokenBar(containerId, used, limit, calls) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const cls = pct >= 90 ? 'full' : pct >= 70 ? 'warn' : 'ok';
+  const usedStr = _formatTokens(used);
+  const limitStr = '400 亿';
+  const callsStr = calls ? ` (${calls} 次调用)` : '';
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+      <span>Token 用量</span><span class="bar-value">${usedStr} / ${limitStr} tokens${callsStr}</span>
+    </div>
+    <div class="bar-row">
+      <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+}
+
+// ==================== PROMPTS ====================
+let brandPrompts = [];
+
+async function loadPrompts(brand) {
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`);
+    brandPrompts = await resp.json();
+    const sel = document.getElementById('prompt-select');
+    sel.innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+    brandPrompts.forEach(p => {
+      sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+    });
+  } catch (e) { console.error('loadPrompts failed', e); }
+}
+
+function applyPrompt() {
+  const pid = document.getElementById('prompt-select').value;
+  if (!pid) return;
+  const p = brandPrompts.find(x => x.id === pid);
+  if (p) document.getElementById('goal-input').value = p.content;
+}
+
 // ==================== OUTPUT PAGE ====================
 async function loadOutputBrandSelect() {
   const resp = await fetch('/api/brands');
@@ -727,6 +1106,7 @@ async function loadOutputBrandSelect() {
   brands.forEach(b => {
     sel.innerHTML += `<option value="${b.name}" ${b.name === current ? 'selected' : ''}>${b.name}</option>`;
   });
+  if (sel.value) loadOutputs();
 }
 
 async function loadOutputs() {
@@ -895,8 +1275,7 @@ async function deleteOutput(brand, filename) {
   }
 }
 
-// Init
-loadBrands();
+// Init handled by auth check above
 </script>
 </body>
 </html>

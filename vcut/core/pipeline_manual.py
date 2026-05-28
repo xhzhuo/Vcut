@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 from vcut.core.config import DEFAULT_MODEL_NAMES
+from vcut.io.token_tracker import TokenTracker
 from vcut.manual.asr import attach_transcript_text_to_segments, build_transcript_index
 from vcut.manual.segments import load_manual_segments_from_excel, write_manual_segments_json
 from vcut.manual.strategy import build_manual_edit_plans
+from vcut.manual.understanding import attach_visual_description_to_segments, build_visual_index
 from vcut.core.pipeline_paths import variant_output_path
 from vcut.stages.strategy import write_edit_plan_json
 from vcut.stages.video_edit import render_video
@@ -58,6 +63,8 @@ def run_manual_pipeline(
     manual_max_duration: float | None,
     manual_use_asr_llm: bool,
     manual_goal: str | None,
+    manual_unique_src_video: bool = False,
+    manual_selection_mode: str = "asr",
     build_transcript_index_fn=build_transcript_index,
     build_manual_edit_plans_fn=build_manual_edit_plans,
     render_video_fn=render_video,
@@ -69,8 +76,11 @@ def run_manual_pipeline(
         video_dir=manual_video_dir,
     )
 
+    use_asr = manual_selection_mode in ("asr", "asr+video")
+    use_video = manual_selection_mode in ("asr+video", "video")
+
     transcript_index: dict[str, dict] = {}
-    if manual_use_asr_llm:
+    if use_asr and manual_use_asr_llm:
         asr_config = dict(config.get("asr", {}))
         transcript_index = build_transcript_index_fn(
             segments=segments,
@@ -84,17 +94,39 @@ def run_manual_pipeline(
         )
         segments = attach_transcript_text_to_segments(segments, transcript_index)
 
+    # Visual understanding enrichment
+    token_tracker = TokenTracker(artifacts_dir / "token_usage.json")
+    if use_video:
+        understanding_config = dict(config.get("understanding", {}))
+        logger.info("[manual] Running visual understanding (mode=%s)", manual_selection_mode)
+        visual_index = build_visual_index(
+            segments=segments,
+            cache_dir=artifacts_dir / "manual_understanding",
+            understanding_config=understanding_config,
+            token_tracker=token_tracker,
+        )
+        visual_index_path = artifacts_dir / "manual_visual_descriptions.json"
+        visual_index_path.write_text(
+            json.dumps(visual_index, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        segments = attach_visual_description_to_segments(segments, visual_index)
+        token_tracker.log_summary()
+
     # Single authoritative manual segment artifact for simpler debugging.
     write_manual_segments_json(segments, artifacts_dir / "manual_segments.json")
 
     strategy_config = dict(config.get("strategy", {}))
+    # LLM selection is needed when ASR+LLM is enabled or when video understanding is used
+    use_llm = manual_use_asr_llm or use_video
     plans = build_manual_edit_plans_fn(
         segments=segments,
         labels=manual_labels,
         variants=manual_variants,
         max_total_duration=manual_max_duration,
-        use_llm=manual_use_asr_llm,
+        use_llm=use_llm,
         llm_goal=manual_goal,
+        unique_src_video=manual_unique_src_video,
         llm_model_name=str(strategy_config.get("model_name", DEFAULT_MODEL_NAMES["strategy"])).strip() or None,
         llm_api_key_env=str(strategy_config.get("api_key_env", "OPENAI_API_KEY")).strip() or None,
         llm_endpoint=str(strategy_config.get("endpoint", "")).strip() or None,
@@ -120,9 +152,9 @@ def run_manual_pipeline(
         batch_seen.add(signature)
 
     for line in removed_logs:
-        print(f"[manual-dedupe] removed {line}")
+        logger.info("[manual-dedupe] removed %s", line)
     if removed_logs:
-        print(f"[manual-dedupe] removed_total={len(removed_logs)}")
+        logger.info("[manual-dedupe] removed_total=%d", len(removed_logs))
 
     plans = kept_plans
     _append_signature_history(signature_history_path, kept_signatures)
@@ -135,12 +167,9 @@ def run_manual_pipeline(
         plan_path = artifacts_dir / f"edit_plan_{video_stem}.json"
         write_edit_plan_json(plan, plan_path)
         if bool(render_config.get("enabled", True)):
-            render_result = render_video_fn(
+            render_video_fn(
                 edit_plan=plan,
                 output_video=output_for_variant,
                 render_config=render_config,
             )
-            adjusted_plan = render_result.get("adjusted_edit_plan")
-            if isinstance(adjusted_plan, list) and adjusted_plan:
-                write_edit_plan_json(adjusted_plan, plan_path)
 

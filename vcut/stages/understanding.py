@@ -345,3 +345,134 @@ def _normalize_visual_description(raw: dict, label: str) -> dict:
     normalized["visual_tags"] = visual_tags or normalized["visual_tags"]
     return normalized
 
+
+_MAX_BASE64_BYTES = 50 * 1024 * 1024  # 50MB MiMo API limit
+
+
+def _resolve_video_data_url(video_path: str) -> str:
+    """Encode local video file as base64 data URL for MiMo video understanding."""
+    raw = str(video_path).strip()
+    if raw.startswith(("http://", "https://", "data:")):
+        return raw
+
+    local_path = Path(raw)
+    if not local_path.exists() or not local_path.is_file():
+        raise FileNotFoundError(f"Video file does not exist: {video_path}")
+
+    data = local_path.read_bytes()
+    if len(data) > _MAX_BASE64_BYTES:
+        raise RuntimeError(
+            f"Video file too large for base64 encoding: {len(data)} bytes "
+            f"(limit {_MAX_BASE64_BYTES}). Use a shorter segment or smaller video."
+        )
+    mime, _ = mimetypes.guess_type(local_path.name)
+    encoded = base64.b64encode(data).decode("utf-8")
+    return f"data:{mime or 'video/mp4'};base64,{encoded}"
+
+
+def describe_video_segment(video_path: str, config: dict) -> tuple[dict, dict]:
+    """Describe a video segment using MiMo video understanding API.
+
+    Returns (visual_description, usage) where usage contains token counts from
+    the API response.
+    """
+    api_key_env = str(config.get("api_key_env") or "OPENAI_API_KEY")
+    api_key = os.getenv(api_key_env, "").strip()
+    if not api_key:
+        raise RuntimeError(
+            f"Video understanding API key is missing. Please set environment variable: {api_key_env}"
+        )
+
+    endpoint = str(
+        config.get("endpoint")
+        or os.getenv("OPENAI_RESPONSES_BASE_URL", "").strip()
+        or "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    )
+    model_name = str(config.get("model_name") or DEFAULT_MODEL_NAMES["understanding"])
+    timeout = float(config.get("timeout", 120.0))
+    prompt_template = str(config.get("prompt_template") or "").strip()
+    prompt = (
+        prompt_template
+        or "Analyze the video content (visual and audio) and return JSON only with fields: "
+        "scene_summary (string, describe what happens in the video), "
+        "subjects (array of strings), actions (array of strings), "
+        "mood (string), visual_tags (array of strings). No markdown."
+    )
+    fps = float(config.get("video_fps", 2))
+    media_resolution = str(config.get("video_media_resolution", "default")).strip() or "default"
+
+    video_url = _resolve_video_data_url(video_path)
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "video_url",
+                        "video_url": {"url": video_url},
+                        "fps": fps,
+                        "media_resolution": media_resolution,
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    def _do_request() -> requests.Response:
+        try:
+            resp = requests.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Video understanding API request failed: {exc}") from exc
+        if resp.status_code >= 500:
+            raise RuntimeError(f"Video understanding API server error: status={resp.status_code}")
+        return resp
+
+    logger.info("Calling Video Understanding API endpoint=%s model=%s", endpoint, model_name)
+    response = retry_call(_do_request, max_retries=3, base_delay=2.0, retryable=(RuntimeError,))
+
+    if response.status_code >= 400:
+        body_preview = response.text[:400]
+        raise RuntimeError(
+            "Video understanding API returned HTTP error: "
+            f"status={response.status_code}, body={body_preview}"
+        )
+
+    try:
+        response_payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Video understanding API returned non-JSON response.") from exc
+
+    if not isinstance(response_payload, dict):
+        raise RuntimeError("Video understanding API returned invalid JSON payload type.")
+
+    # Extract token usage from response
+    usage = response_payload.get("usage", {})
+    if isinstance(usage, dict):
+        usage = {
+            "video_tokens": int(usage.get("video_tokens", 0)),
+            "audio_tokens": int(usage.get("audio_tokens", 0)),
+            "completion_tokens": int(usage.get("completion_tokens", 0)),
+            "total_tokens": int(usage.get("total_tokens", 0)),
+        }
+    else:
+        usage = {"video_tokens": 0, "audio_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    response_text = _extract_output_text(response_payload)
+    if not response_text:
+        raise RuntimeError("Video understanding API response does not contain output text.")
+
+    label = Path(video_path).stem or "unknown"
+    parsed = _parse_json_object(response_text)
+    return _normalize_visual_description(parsed, label), usage
+

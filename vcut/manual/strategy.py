@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 import subprocess
 from pathlib import Path
@@ -10,7 +13,7 @@ from typing import Callable
 
 from vcut.core.config import DEFAULT_MODEL_NAMES
 from vcut.manual.segments import normalize_manual_label
-from vcut.stages.strategy import _call_openai_chat
+from vcut.stages.strategy import _call_openai_chat, _parse_json_robust
 
 
 VALID_ROLES = {"hook", "setup", "demo", "proof", "closing"}
@@ -104,15 +107,21 @@ def _build_deterministic_selection(
 def _build_llm_candidates(
     segments: list[dict],
     labels: list[str],
-) -> dict[str, list[dict]]:
+) -> tuple[dict[str, list[dict]], bool]:
     grouped = _group_by_label(segments)
     payload: dict[str, list[dict]] = {}
+    has_visual = False
     for label in labels:
         candidates = grouped.get(label, [])
         if not candidates:
             raise ValueError(f"No segments found for label: {label}")
-        payload[label] = [
-            {
+        items = []
+        for item in candidates:
+            scene_summary = str(item.get("scene_summary", "")).strip()
+            visual_tags = item.get("visual_tags", [])
+            if scene_summary:
+                has_visual = True
+            entry = {
                 "segment_id": str(item.get("segment_id", "")),
                 "src_video": str(item.get("src_video", "")),
                 "start": float(item.get("start", 0.0)),
@@ -120,9 +129,13 @@ def _build_llm_candidates(
                 "duration": float(item.get("duration", 0.0)),
                 "transcript_text": str(item.get("transcript_text", "")).strip(),
             }
-            for item in candidates
-        ]
-    return payload
+            if scene_summary:
+                entry["scene_summary"] = scene_summary
+            if visual_tags:
+                entry["visual_tags"] = visual_tags
+            items.append(entry)
+        payload[label] = items
+    return payload, has_visual
 
 
 def _select_with_llm(
@@ -134,6 +147,7 @@ def _select_with_llm(
     llm_api_key_env: str | None,
     llm_endpoint: str | None,
     prior_plans: list[list[dict]] | None = None,
+    unique_src_video: bool = False,
 ) -> list[dict]:
     api_key_env = str(llm_api_key_env or "").strip() or "OPENAI_API_KEY"
     api_key = os.getenv(api_key_env, "").strip()
@@ -141,7 +155,7 @@ def _select_with_llm(
         raise RuntimeError(f"{api_key_env} is required for --manual-use-asr-llm.")
     endpoint = str(llm_endpoint or "").strip() or os.getenv("OPENAI_BASE_URL", "").strip() or "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 
-    candidates_by_label = _build_llm_candidates(segments, labels)
+    candidates_by_label, has_visual = _build_llm_candidates(segments, labels)
     avoid_segment_ids: list[str] = []
     for plan in prior_plans or []:
         avoid_segment_ids.extend(
@@ -163,38 +177,57 @@ def _select_with_llm(
         "goal": goal,
         "labels_in_order": labels,
         "candidates_by_label": candidates_by_label,
-        "requirements": {
-            "must_follow_label_order": True,
-            "must_select_exactly_one_per_label": True,
-            "prioritize_dialogue_coherence": True,
-            "prefer_explicit_transition_between_adjacent_lines": True,
-            "CRITICAL_USER_CONSTRAINT": f"You MUST STRICTLY satisfy this goal: {goal}. If the goal asks for different source videos, you MUST NOT select segments that have the same src_video.",
-        },
-        "output_schema": {
-            "items": [
-                {
-                    "label": "string",
-                    "reason": "string (必须用中文撰写。请先分析用户约束和已选视频去重，再决定选择哪个片段)",
-                    "segment_id": "string",
-                }
-            ]
-        },
     }
+
+    system_content = (
+        "You are an expert video editor. Return strict JSON only.\n\n"
+        "## Task\n"
+        "Select exactly one video segment per label, in the exact label order provided.\n\n"
+        "## Selection Criteria\n"
+        "1. Dialogue coherence across adjacent segments is the top priority.\n"
+        "2. Prefer segments with clear transitions between consecutive labels.\n"
+        "3. Choose segments that best serve the user's goal.\n"
+    )
+
+    if has_visual:
+        system_content += (
+            "4. Use scene_summary and visual_tags to verify visual content matches label semantics.\n"
+            "5. Prefer segments with richer visual descriptions and diverse visual tags.\n"
+            "6. Avoid segments with empty or generic scene descriptions when better alternatives exist.\n"
+        )
+
+    system_content += (
+        "\n## Output Format\n"
+        'Return a JSON object with key "items", an array where each element has:\n'
+        '- "label": the label string (must match input order exactly)\n'
+        '- "segment_id": the selected segment\'s ID\n'
+        '- "reason": explanation in Chinese (先分析约束条件，再说明选择理由)\n'
+    )
+
+    if unique_src_video:
+        system_content += (
+            "\n## CRITICAL Rule: Source Video Uniqueness\n"
+            "Each selected segment MUST come from a unique src_video.\n\n"
+            "You MUST plan your src_video assignments FIRST, then select segments.\n"
+            "Follow this exact order in your JSON output:\n"
+            '1. FIRST output "chosen_src_videos": an array listing the src_video you will use for each label, in label order. All values must be unique.\n'
+            '2. THEN output "items": select a segment whose src_video matches the corresponding entry in chosen_src_videos.\n\n'
+            "Process:\n"
+            "- For each label, list all available src_video values from the candidates.\n"
+            "- Assign a unique src_video to each label, prioritizing dialogue coherence.\n"
+            "- Write the assignments into chosen_src_videos.\n"
+            "- Then find a segment matching each assignment.\n\n"
+            'If you cannot find a valid assignment, return {"error": "reason"} instead.\n'
+        )
+
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an expert video editor. Return strict JSON only. "
-                "Select exactly one segment per label in exact label order.\n"
-                "CRITICAL INSTRUCTION: You MUST strictly satisfy the user's goal.\n"
-                f"USER GOAL: {goal}\n"
-                "If the user asks for different source videos, EVERY SINGLE SEGMENT you output MUST come from a globally UNIQUE `src_video`. You must keep a list of all `src_video`s you have chosen in your mind, and NEVER reuse any of them anywhere in the entire JSON."
-            ),
-        },
+        {"role": "system", "content": system_content},
         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
     ]
     content = _call_openai_chat(messages, model_name=model_name, api_key=api_key, endpoint=endpoint)
-    parsed = json.loads(content)
+    parsed = _parse_json_robust(content)
+    if isinstance(parsed, dict) and "error" in parsed:
+        raise RuntimeError(f"LLM cannot satisfy unique_src_video constraint: {parsed['error']}")
     if isinstance(parsed, list):
         items = parsed
     else:
@@ -221,14 +254,25 @@ def _select_with_llm(
         enriched = dict(segment)
         enriched["llm_reason"] = str(record.get("reason", ""))
         selected.append(enriched)
+
+    if unique_src_video:
+        seen_src: dict[str, int] = {}
+        for item in selected:
+            src = str(item.get("src_video", ""))
+            seen_src[src] = seen_src.get(src, 0) + 1
+        duplicates = {src: count for src, count in seen_src.items() if count > 1}
+        if duplicates:
+            detail = ", ".join(f"{src}({count}次)" for src, count in duplicates.items())
+            raise RuntimeError(
+                f"LLM violated unique_src_video constraint. Duplicate src_video: {detail}"
+            )
+
     return selected
 
 
 def _resolve_ffprobe_command() -> str:
-    local_ffprobe = Path(__file__).resolve().parents[1] / "ffmpeg" / "bin" / "ffprobe.exe"
-    if local_ffprobe.exists():
-        return str(local_ffprobe)
-    return "ffprobe"
+    from vcut.io.ffmpeg_utils import resolve_ffprobe_command
+    return resolve_ffprobe_command()
 
 
 def _probe_duration_seconds(src_video: str) -> float | None:
@@ -367,6 +411,7 @@ def build_manual_edit_plans(
     llm_model_name: str | None = None,
     llm_api_key_env: str | None = None,
     llm_endpoint: str | None = None,
+    unique_src_video: bool = False,
 ) -> list[list[dict]]:
     """Build one or more plans using rotated deterministic picks."""
     count = max(1, int(variants))
@@ -390,6 +435,7 @@ def build_manual_edit_plans(
                     llm_api_key_env=llm_api_key_env,
                     llm_endpoint=llm_endpoint,
                     prior_plans=plans,
+                    unique_src_video=unique_src_video,
                 )
                 plan = _build_plan_from_selected_segments(
                     selected=chosen,
@@ -397,9 +443,7 @@ def build_manual_edit_plans(
                 )
                 plan = enforce_not_identical_to_source(plan)
             except Exception as e:  # noqa: BLE001
-                import traceback
-                print(f"WARNING: LLM generation failed, falling back to deterministic plan. Reason: {e}")
-                traceback.print_exc()
+                logger.warning("LLM generation failed, falling back to deterministic plan: %s", e, exc_info=True)
                 plan = build_manual_edit_plan(
                     segments=segments,
                     labels=normalized_labels,

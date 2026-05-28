@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import shutil
 import subprocess
 import threading
@@ -14,14 +15,37 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Request
+from fastapi.responses import HTMLResponse, FileResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 import openpyxl
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VCut")
+
+# ---------------------------------------------------------------------------
+# Auth configuration
+# ---------------------------------------------------------------------------
+AUTH_USER = os.getenv("VCUT_AUTH_USER", "").strip()
+AUTH_PASSWORD = os.getenv("VCUT_AUTH_PASSWORD", "").strip()
+AUTH_ENABLED = bool(AUTH_USER)
+
+_secret_key = os.getenv("VCUT_SECRET_KEY", "").strip() or secrets.token_hex(32)
+app.add_middleware(SessionMiddleware, secret_key=_secret_key, max_age=86400)
+
+
+def get_current_user(request: Request) -> str:
+    if not AUTH_ENABLED:
+        return "anonymous"
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    return user
+
+
+
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -46,6 +70,8 @@ class Task:
     labels: list[str] = field(default_factory=list)
     variants: int = 1
     artifacts_subdir: str = ""
+    unique_src_video: bool = False
+    selection_mode: str = "asr"
 
 _tasks: dict[str, Task] = {}
 _lock = threading.Lock()
@@ -57,6 +83,7 @@ _running: bool = False
 _MANUAL_STAGE_ORDER = [
     ("segments", "manual_segments.json", 20),
     ("transcripts", "manual_transcripts.json", 40),
+    ("visual", "manual_visual_descriptions.json", 60),
     ("strategy", "edit_plan.json", 80),
     ("render", None, 100),
 ]
@@ -126,10 +153,16 @@ def _run_manual_pipeline(task: Task) -> None:
             "--output-video", output_path,
             "--manual-variants", str(task.variants),
             "--group-name", task.brand,
+            "--manual-use-asr-llm",
         ]
 
+        if task.unique_src_video:
+            cmd.append("--manual-unique-src-video")
+
+        cmd.extend(["--manual-selection-mode", task.selection_mode])
+
         if task.goal:
-            cmd.extend(["--manual-goal", task.goal, "--manual-use-asr-llm"])
+            cmd.extend(["--manual-goal", task.goal])
 
         env = os.environ.copy()
         env["VCUT_ARTIFACTS_DIR"] = str(ARTIFACTS_DIR)
@@ -144,16 +177,23 @@ def _run_manual_pipeline(task: Task) -> None:
             cwd=str(Path(__file__).resolve().parents[2]),
         )
 
+        # Keep last 80 lines for error diagnostics
+        output_lines: list[str] = []
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
             if line:
                 logger.info("[pipeline] %s", line)
+                output_lines.append(line)
+                if len(output_lines) > 80:
+                    output_lines.pop(0)
 
         proc.wait()
 
         if proc.returncode != 0:
             task.status = "failed"
-            task.error = f"Pipeline exited with code {proc.returncode}"
+            tail = "\n".join(output_lines[-30:]) if output_lines else "(no output)"
+            task.error = f"Pipeline exited with code {proc.returncode}\n\n--- last output ---\n{tail}"
+            logger.error("Pipeline failed (exit %d): %s", proc.returncode, tail)
         else:
             # Find actual output file (pipeline may have redirected the path)
             actual = _find_output_video(task)
@@ -175,10 +215,82 @@ def _run_manual_pipeline(task: Task) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/login")
+async def login(body: dict, request: Request):
+    if not AUTH_ENABLED:
+        return {"ok": True, "user": "anonymous"}
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if username == AUTH_USER and password == AUTH_PASSWORD:
+        request.session["user"] = username
+        return {"ok": True, "user": username}
+    raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+
+@app.post("/api/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    if not AUTH_ENABLED:
+        return {"auth_required": False, "logged_in": True, "user": "anonymous"}
+    user = request.session.get("user")
+    return {"auth_required": True, "logged_in": bool(user), "user": user or ""}
+
+
+# ---------------------------------------------------------------------------
+# Storage limits & usage
+# ---------------------------------------------------------------------------
+INPUTS_LIMIT_GB = 12
+OUTPUT_LIMIT_GB = 6
+
+
+def _dir_size_mb(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    total = 0
+    for f in path.rglob("*"):
+        if f.is_file():
+            total += f.stat().st_size
+    return round(total / 1024 / 1024, 1)
+
+
+@app.get("/api/storage")
+async def storage_usage(current_user: str = Depends(get_current_user)):
+    inputs_mb = _dir_size_mb(INPUTS_DIR)
+    output_mb = _dir_size_mb(OUTPUT_DIR)
+    artifacts_mb = _dir_size_mb(ARTIFACTS_DIR)
+
+    # Aggregate token usage across all brands
+    total_tokens = 0
+    total_calls = 0
+    if ARTIFACTS_DIR.exists():
+        for token_file in ARTIFACTS_DIR.rglob("token_usage.json"):
+            try:
+                data = json.loads(token_file.read_text(encoding="utf-8"))
+                total_tokens += int(data.get("total_tokens", 0))
+                total_calls += int(data.get("api_calls", 0))
+            except (json.JSONDecodeError, OSError, ValueError):
+                continue
+
+    return {
+        "inputs": {"used_mb": inputs_mb, "limit_mb": INPUTS_LIMIT_GB * 1024},
+        "output": {"used_mb": output_mb, "limit_mb": OUTPUT_LIMIT_GB * 1024},
+        "artifacts": {"used_mb": artifacts_mb},
+        "tokens": {"used": total_tokens, "limit": 40_000_000_000, "api_calls": total_calls},
+    }
+
+
+# ---------------------------------------------------------------------------
 # API: Brands
 # ---------------------------------------------------------------------------
 @app.get("/api/brands")
-async def list_brands():
+async def list_brands(current_user: str = Depends(get_current_user)):
     if not INPUTS_DIR.exists():
         return []
 
@@ -197,7 +309,7 @@ async def list_brands():
 
 
 @app.get("/api/brands/{brand}/xlsx")
-async def read_brand_xlsx(brand: str):
+async def read_brand_xlsx(brand: str, current_user: str = Depends(get_current_user)):
     xlsx_path = INPUTS_DIR / brand / "切片方案.xlsx"
     if not xlsx_path.exists():
         raise HTTPException(status_code=404, detail=f"品牌 '{brand}' 无切片方案.xlsx")
@@ -236,7 +348,7 @@ async def read_brand_xlsx(brand: str):
 # API: Brand management
 # ---------------------------------------------------------------------------
 @app.post("/api/brands")
-async def create_brand(body: dict):
+async def create_brand(body: dict, current_user: str = Depends(get_current_user)):
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="缺少品牌名称")
@@ -248,7 +360,7 @@ async def create_brand(body: dict):
 
 
 @app.delete("/api/brands/{brand}")
-async def delete_brand(brand: str):
+async def delete_brand(brand: str, current_user: str = Depends(get_current_user)):
     brand_dir = INPUTS_DIR / brand
     if not brand_dir.exists():
         raise HTTPException(status_code=404, detail="品牌不存在")
@@ -258,7 +370,7 @@ async def delete_brand(brand: str):
 
 
 @app.get("/api/brands/{brand}/files")
-async def list_brand_files(brand: str):
+async def list_brand_files(brand: str, current_user: str = Depends(get_current_user)):
     brand_dir = INPUTS_DIR / brand
     if not brand_dir.exists():
         raise HTTPException(status_code=404, detail="品牌不存在")
@@ -274,7 +386,7 @@ async def list_brand_files(brand: str):
 
 
 @app.post("/api/brands/{brand}/files")
-async def upload_brand_file(brand: str, file: UploadFile = File(...)):
+async def upload_brand_file(brand: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     brand_dir = INPUTS_DIR / brand
     brand_dir.mkdir(parents=True, exist_ok=True)
     dest = brand_dir / file.filename
@@ -285,7 +397,7 @@ async def upload_brand_file(brand: str, file: UploadFile = File(...)):
 
 
 @app.delete("/api/brands/{brand}/files/{filename}")
-async def delete_brand_file(brand: str, filename: str):
+async def delete_brand_file(brand: str, filename: str, current_user: str = Depends(get_current_user)):
     file_path = INPUTS_DIR / brand / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -294,10 +406,71 @@ async def delete_brand_file(brand: str, filename: str):
 
 
 # ---------------------------------------------------------------------------
+# API: Prompts (per brand)
+# ---------------------------------------------------------------------------
+def _prompts_path(brand: str) -> Path:
+    return INPUTS_DIR / brand / "prompts.json"
+
+
+def _load_prompts(brand: str) -> list[dict]:
+    p = _prompts_path(brand)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_prompts(brand: str, prompts: list[dict]) -> None:
+    p = _prompts_path(brand)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(prompts, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.get("/api/brands/{brand}/prompts")
+async def list_prompts(brand: str, current_user: str = Depends(get_current_user)):
+    return _load_prompts(brand)
+
+
+@app.post("/api/brands/{brand}/prompts")
+async def create_prompt(brand: str, body: dict, current_user: str = Depends(get_current_user)):
+    name = body.get("name", "").strip()
+    content = body.get("content", "").strip()
+    if not name or not content:
+        raise HTTPException(status_code=400, detail="名称和内容不能为空")
+    prompts = _load_prompts(brand)
+    pid = uuid.uuid4().hex[:8]
+    prompts.append({"id": pid, "name": name, "content": content})
+    _save_prompts(brand, prompts)
+    return {"id": pid, "name": name, "content": content}
+
+
+@app.put("/api/brands/{brand}/prompts/{pid}")
+async def update_prompt(brand: str, pid: str, body: dict, current_user: str = Depends(get_current_user)):
+    prompts = _load_prompts(brand)
+    for p in prompts:
+        if p["id"] == pid:
+            p["name"] = body.get("name", p["name"]).strip()
+            p["content"] = body.get("content", p["content"]).strip()
+            _save_prompts(brand, prompts)
+            return p
+    raise HTTPException(status_code=404, detail="Prompt 不存在")
+
+
+@app.delete("/api/brands/{brand}/prompts/{pid}")
+async def delete_prompt(brand: str, pid: str, current_user: str = Depends(get_current_user)):
+    prompts = _load_prompts(brand)
+    prompts = [p for p in prompts if p["id"] != pid]
+    _save_prompts(brand, prompts)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # API: Tasks
 # ---------------------------------------------------------------------------
 @app.post("/api/tasks")
-async def create_task(body: dict):
+async def create_task(body: dict, current_user: str = Depends(get_current_user)):
     global _running
 
     brand = body.get("brand")
@@ -317,12 +490,18 @@ async def create_task(body: dict):
             raise HTTPException(status_code=429, detail="已有任务在运行，请等待完成")
 
     task_id = uuid.uuid4().hex[:12]
+    selection_mode = body.get("selection_mode", "asr")
+    if selection_mode not in ("asr", "asr+video", "video"):
+        raise HTTPException(status_code=400, detail="selection_mode 必须是 asr、asr+video 或 video")
+
     task = Task(
         id=task_id,
         brand=brand,
         goal=body.get("goal", ""),
         labels=labels,
         variants=body.get("variants", 1),
+        unique_src_video=body.get("unique_src_video", False),
+        selection_mode=selection_mode,
         status="running",
         stage="starting",
         progress=0,
@@ -340,12 +519,12 @@ async def create_task(body: dict):
 
 
 @app.get("/api/tasks")
-async def list_tasks():
+async def list_tasks(current_user: str = Depends(get_current_user)):
     return [_task_dict(t) for t in _tasks.values()]
 
 
 @app.get("/api/tasks/{task_id}")
-async def get_task(task_id: str):
+async def get_task(task_id: str, current_user: str = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -354,7 +533,7 @@ async def get_task(task_id: str):
 
 
 @app.get("/api/tasks/{task_id}/download")
-async def download_task(task_id: str):
+async def download_task(task_id: str, current_user: str = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -457,7 +636,7 @@ def _enrich_plan_with_labels(plan: list[dict], label_map: dict[str, str]) -> lis
 
 
 @app.get("/api/brands/{brand}/outputs")
-async def list_brand_outputs(brand: str):
+async def list_brand_outputs(brand: str, current_user: str = Depends(get_current_user)):
     outputs = _find_brand_outputs(brand)
     label_map = _load_segment_label_map(brand)
     results = []
@@ -478,7 +657,7 @@ async def list_brand_outputs(brand: str):
 
 
 @app.get("/api/brands/{brand}/outputs/{filename}/plan")
-async def get_edit_plan(brand: str, filename: str):
+async def get_edit_plan(brand: str, filename: str, current_user: str = Depends(get_current_user)):
     plan = _find_edit_plan_for_video(brand, filename)
     if plan is None:
         raise HTTPException(status_code=404, detail="未找到对应的 edit plan")
@@ -489,7 +668,7 @@ async def get_edit_plan(brand: str, filename: str):
 
 
 @app.post("/api/brands/{brand}/outputs/{filename}/feedback")
-async def save_feedback(brand: str, filename: str, body: dict):
+async def save_feedback(brand: str, filename: str, body: dict, current_user: str = Depends(get_current_user)):
     fb_dir = ARTIFACTS_DIR / brand / "feedback"
     fb_dir.mkdir(parents=True, exist_ok=True)
     fb_path = fb_dir / f"{Path(filename).stem}.json"
@@ -506,7 +685,7 @@ async def save_feedback(brand: str, filename: str, body: dict):
 
 
 @app.put("/api/brands/{brand}/outputs/{filename}")
-async def rename_output(brand: str, filename: str, body: dict):
+async def rename_output(brand: str, filename: str, body: dict, current_user: str = Depends(get_current_user)):
     new_name = body.get("name", "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="缺少新文件名")
@@ -532,7 +711,7 @@ async def rename_output(brand: str, filename: str, body: dict):
 
 
 @app.delete("/api/brands/{brand}/outputs/{filename}")
-async def delete_output(brand: str, filename: str):
+async def delete_output(brand: str, filename: str, current_user: str = Depends(get_current_user)):
     deleted = False
     for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
         fpath = search_dir / filename
@@ -549,7 +728,7 @@ async def delete_output(brand: str, filename: str):
 
 
 @app.get("/api/brands/{brand}/outputs/{filename}/download")
-async def download_output(brand: str, filename: str):
+async def download_output(brand: str, filename: str, current_user: str = Depends(get_current_user)):
     for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
         fpath = search_dir / filename
         if fpath.exists():
@@ -577,4 +756,5 @@ def _task_dict(task: Task) -> dict[str, Any]:
         "labels": task.labels,
         "variants": task.variants,
         "error": task.error,
+        "selection_mode": task.selection_mode,
     }

@@ -32,6 +32,8 @@ def run_pipeline(
     manual_max_duration: float | None = None,
     manual_use_asr_llm: bool = False,
     manual_goal: str | None = None,
+    manual_unique_src_video: bool = False,
+    manual_selection_mode: str = "asr",
     group_name: str | None = None,
 ) -> None:
     """Run pipeline in manual or auto mode and write outputs/artifacts."""
@@ -60,6 +62,8 @@ def run_pipeline(
             manual_max_duration=manual_max_duration,
             manual_use_asr_llm=manual_use_asr_llm,
             manual_goal=manual_goal or goal,
+            manual_unique_src_video=manual_unique_src_video,
+            manual_selection_mode=manual_selection_mode,
         )
         return
 
