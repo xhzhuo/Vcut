@@ -162,7 +162,7 @@ def run_manual_pipeline(
     render_config = dict(config.get("render", {}))
     for idx, plan in enumerate(plans):
         # Match plan naming to output video naming convention
-        output_for_variant = variant_output_path(output_video, idx + 1)
+        output_for_variant = variant_output_path(output_video, idx + 1, manual_selection_mode)
         video_stem = Path(output_for_variant).stem
         plan_path = artifacts_dir / f"edit_plan_{video_stem}.json"
         write_edit_plan_json(plan, plan_path)
