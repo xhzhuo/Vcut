@@ -54,8 +54,7 @@
   .mode-card:hover { border-color: #4a9eff; background: #1a2a3a; }
   .mode-card.selected { border-color: #4a9eff; background: #1a3a5c; }
   .mode-icon { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #4a9eff; }
-  .mode-name { font-size: 14px; font-weight: 600; color: #e0e0e0; margin-bottom: 2px; }
-  .mode-desc { font-size: 12px; color: #888; }
+  .mode-name { font-size: 14px; font-weight: 600; color: #e0e0e0; }
 
   /* Config form */
   .config-section { display: none; }
@@ -404,17 +403,14 @@
           <div class="mode-card selected" data-mode="asr" onclick="selectMode('asr')">
             <div class="mode-icon">A</div>
             <div class="mode-name">纯 ASR</div>
-            <div class="mode-desc">仅语音文字，速度最快</div>
           </div>
           <div class="mode-card" data-mode="asr+video" onclick="selectMode('asr+video')">
             <div class="mode-icon">A+V</div>
             <div class="mode-name">ASR + 视频理解</div>
-            <div class="mode-desc">文字 + 视觉，效果最好</div>
           </div>
           <div class="mode-card" data-mode="video" onclick="selectMode('video')">
             <div class="mode-icon">V</div>
             <div class="mode-name">纯视频理解</div>
-            <div class="mode-desc">一次调用搞定，性价比高</div>
           </div>
         </div>
       </div>
