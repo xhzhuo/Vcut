@@ -238,6 +238,11 @@ def _select_with_llm(
         raise RuntimeError("Manual LLM selector did not return a valid list.")
 
     by_id = {str(item.get("segment_id", "")): item for item in segments}
+    # Build per-label valid segment_id set for fallback
+    label_valid_ids: dict[str, list[dict]] = {}
+    for lbl, cands in candidates_by_label.items():
+        label_valid_ids[lbl] = cands
+
     selected: list[dict] = []
     for idx, label in enumerate(labels):
         if idx >= len(items):
@@ -249,8 +254,15 @@ def _select_with_llm(
         segment_id = str(record.get("segment_id", "")).strip()
         segment = by_id.get(segment_id)
         if not segment:
-            raise RuntimeError(f"Manual LLM selector picked unknown segment_id: {segment_id}")
-        
+            # LLM picked invalid segment_id — fallback to first candidate for this label
+            cands = label_valid_ids.get(label, [])
+            if cands:
+                fallback = cands[0]
+                segment = by_id.get(str(fallback.get("segment_id", "")))
+                logger.warning("[llm-select] invalid segment_id '%s' for label '%s', fallback to '%s'", segment_id, label, fallback.get("segment_id"))
+            if not segment:
+                raise RuntimeError(f"Manual LLM selector picked unknown segment_id: {segment_id}")
+
         enriched = dict(segment)
         enriched["llm_reason"] = str(record.get("reason", ""))
         selected.append(enriched)
