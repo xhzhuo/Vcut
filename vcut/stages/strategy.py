@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib import error, request
@@ -15,6 +16,58 @@ from vcut.io.retry import retry_call
 logger = logging.getLogger(__name__)
 
 VALID_ROLES = {"hook", "setup", "demo", "proof", "closing"}
+
+
+def _parse_json_robust(text: str) -> dict | list:
+    """Parse JSON from LLM output, handling markdown fences and prose."""
+    stripped = text.strip()
+    if not stripped:
+        raise RuntimeError("LLM output is empty.")
+
+    # Strip markdown code fences
+    stripped = re.sub(r"^```(?:json)?\s*\n?", "", stripped, flags=re.MULTILINE)
+    stripped = re.sub(r"\n?```\s*$", "", stripped, flags=re.MULTILINE)
+    stripped = stripped.strip()
+
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: find first balanced {...} or [...]
+    for start in range(len(stripped)):
+        if stripped[start] not in "{[":
+            continue
+        open_ch = stripped[start]
+        close_ch = "}" if open_ch == "{" else "]"
+        depth = 0
+        in_string = False
+        escaped = False
+        for idx in range(start, len(stripped)):
+            ch = stripped[idx]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(stripped[start : idx + 1])
+                    except json.JSONDecodeError:
+                        break
+        break
+
+    raise RuntimeError("LLM output contains no valid JSON.")
 
 
 def _safe_text(value: Any) -> str:
