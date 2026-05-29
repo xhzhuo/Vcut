@@ -216,6 +216,35 @@ def _run_manual_pipeline(task: Task) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Storage limits & usage
+# ---------------------------------------------------------------------------
+INPUTS_LIMIT_GB = 12
+OUTPUT_LIMIT_GB = 6
+
+
+def _dir_size_mb(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    total = 0
+    for f in path.rglob("*"):
+        if f.is_file():
+            total += f.stat().st_size
+    return round(total / 1024 / 1024, 1)
+
+
+@app.get("/api/storage")
+async def storage_usage(current_user: str = Depends(get_current_user)):
+    inputs_mb = _dir_size_mb(INPUTS_DIR)
+    output_mb = _dir_size_mb(OUTPUT_DIR)
+    artifacts_mb = _dir_size_mb(ARTIFACTS_DIR)
+    return {
+        "inputs": {"used_mb": inputs_mb, "limit_mb": INPUTS_LIMIT_GB * 1024},
+        "output": {"used_mb": output_mb, "limit_mb": OUTPUT_LIMIT_GB * 1024},
+        "artifacts": {"used_mb": artifacts_mb},
+    }
+
+
+# ---------------------------------------------------------------------------
 # API: Brands
 # ---------------------------------------------------------------------------
 @app.get("/api/brands")
@@ -653,7 +682,7 @@ async def auth_status(current_user: str = Depends(get_current_user)):
 # Prompts
 # ---------------------------------------------------------------------------
 def _load_prompts(brand: str) -> list[dict]:
-    path = ARTIFACTS_DIR / brand / "prompts.json"
+    path = INPUTS_DIR / brand / "prompts.json"
     if not path.exists():
         return []
     try:
@@ -663,7 +692,7 @@ def _load_prompts(brand: str) -> list[dict]:
 
 
 def _save_prompts(brand: str, prompts: list[dict]) -> None:
-    path = ARTIFACTS_DIR / brand / "prompts.json"
+    path = INPUTS_DIR / brand / "prompts.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(prompts, ensure_ascii=False, indent=2), encoding="utf-8")
 
