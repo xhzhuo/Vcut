@@ -659,7 +659,7 @@ def _task_dict(task: Task) -> dict[str, Any]:
 async def login(body: dict, request: Request):
     if not AUTH_ENABLED:
         return {"ok": True, "user": "anonymous"}
-    user = body.get("user", "").strip()
+    user = (body.get("user") or body.get("username") or "").strip()
     password = body.get("password", "").strip()
     if user == AUTH_USER and password == AUTH_PASSWORD:
         request.session["user"] = user
