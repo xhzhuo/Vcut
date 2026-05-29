@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from vcut.core.config import DEFAULT_MODEL_NAMES
 from vcut.manual.asr import attach_transcript_text_to_segments, build_transcript_index
@@ -58,6 +61,7 @@ def run_manual_pipeline(
     manual_max_duration: float | None,
     manual_use_asr_llm: bool,
     manual_goal: str | None,
+    manual_unique_src_video: bool = False,
     build_transcript_index_fn=build_transcript_index,
     build_manual_edit_plans_fn=build_manual_edit_plans,
     render_video_fn=render_video,
@@ -95,6 +99,7 @@ def run_manual_pipeline(
         max_total_duration=manual_max_duration,
         use_llm=manual_use_asr_llm,
         llm_goal=manual_goal,
+        unique_src_video=manual_unique_src_video,
         llm_model_name=str(strategy_config.get("model_name", DEFAULT_MODEL_NAMES["strategy"])).strip() or None,
         llm_api_key_env=str(strategy_config.get("api_key_env", "OPENAI_API_KEY")).strip() or None,
         llm_endpoint=str(strategy_config.get("endpoint", "")).strip() or None,
@@ -120,9 +125,9 @@ def run_manual_pipeline(
         batch_seen.add(signature)
 
     for line in removed_logs:
-        print(f"[manual-dedupe] removed {line}")
+        logger.info("[manual-dedupe] removed %s", line)
     if removed_logs:
-        print(f"[manual-dedupe] removed_total={len(removed_logs)}")
+        logger.info("[manual-dedupe] removed_total=%d", len(removed_logs))
 
     plans = kept_plans
     _append_signature_history(signature_history_path, kept_signatures)

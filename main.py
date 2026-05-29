@@ -92,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional goal text for manual ASR+LLM selection.",
     )
     parser.add_argument(
+        "--manual-unique-src-video",
+        action="store_true",
+        help="Require each label to come from a different source video.",
+    )
+    parser.add_argument(
         "--interactive",
         action="store_true",
         help="Run in interactive prompt mode (CLI args still override prompts).",
@@ -275,6 +280,7 @@ def main() -> None:
             manual_max_duration=args.manual_max_duration,
             manual_use_asr_llm=args.manual_use_asr_llm,
             manual_goal=args.manual_goal,
+            manual_unique_src_video=args.manual_unique_src_video,
             group_name=args.group_name,
         )
         return
