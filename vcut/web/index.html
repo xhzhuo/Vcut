@@ -14,7 +14,7 @@
   }
   .card {
     background: #1a1a1a; border-radius: 16px; padding: 40px;
-    width: 100%; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
   .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
@@ -488,7 +488,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   const errEl = document.getElementById('login-error');
   btn.disabled = true; btn.textContent = '登录中...'; errEl.style.display = 'none';
   try {
-    const resp = await fetch('/api/auth/login', {
+    const resp = await fetch('/api/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -509,7 +509,7 @@ document.getElementById('login-pass').addEventListener('keydown', (e) => {
 });
 
 async function doLogout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
+  await fetch('/api/logout', { method: 'POST' });
   showLogin();
 }
 
@@ -517,7 +517,7 @@ async function doLogout() {
 const _origFetch = window.fetch;
 window.fetch = async function(...args) {
   const resp = await _origFetch.apply(this, args);
-  if (resp.status === 401 && !args[0].includes('/api/auth/login') && !args[0].includes('/api/auth/status')) {
+  if (resp.status === 401 && !args[0].includes('/api/login') && !args[0].includes('/api/auth/status')) {
     showLogin();
     throw new Error('未登录');
   }

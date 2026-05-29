@@ -428,7 +428,6 @@ def build_manual_edit_plans(
                 plan = enforce_not_identical_to_source(plan)
             except Exception as e:  # noqa: BLE001
                 logger.warning("LLM generation failed, falling back to deterministic plan: %s", e, exc_info=True)
-                traceback.print_exc()
                 plan = build_manual_edit_plan(
                     segments=segments,
                     labels=normalized_labels,

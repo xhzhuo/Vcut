@@ -8,7 +8,6 @@ import os
 import secrets
 import shutil
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -44,6 +43,9 @@ def get_current_user(request: Request) -> str:
     if not user:
         raise HTTPException(status_code=401, detail="未登录")
     return user
+
+
+
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -92,22 +94,14 @@ def _detect_progress(task: Task) -> None:
     base = ARTIFACTS_DIR / task.artifacts_subdir if task.artifacts_subdir else ARTIFACTS_DIR
 
     for stage_name, filename, pct in _MANUAL_STAGE_ORDER:
-        if filename:
-            if filename == "edit_plan.json":
-                # edit plan files are named edit_plan_{stem}.json
-                if list(base.glob("edit_plan_*.json")):
-                    task.stage = stage_name
-                    task.progress = pct
-                else:
-                    break
-            elif (base / filename).exists():
-                task.stage = stage_name
-                task.progress = pct
-            else:
-                break
+        if filename and (base / filename).exists():
+            task.stage = stage_name
+            task.progress = pct
         else:
-            task.stage = "render"
-            task.progress = 90
+            break
+    else:
+        task.stage = "render"
+        task.progress = 90
 
     if task.output_file and Path(task.output_file).exists():
         task.status = "done"
@@ -150,7 +144,7 @@ def _run_manual_pipeline(task: Task) -> None:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         cmd = [
-            sys.executable, "main.py",
+            "python", "main.py",
             "--manual-xlsx", xlsx_path,
             "--manual-video-dir", video_dir,
             "--labels", *task.labels,
@@ -179,6 +173,7 @@ def _run_manual_pipeline(task: Task) -> None:
             cwd=str(Path(__file__).resolve().parents[2]),
         )
 
+        # Keep last 80 lines for error diagnostics
         output_lines: list[str] = []
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
@@ -213,6 +208,35 @@ def _run_manual_pipeline(task: Task) -> None:
     finally:
         with _lock:
             _running = False
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/login")
+async def login(body: dict, request: Request):
+    if not AUTH_ENABLED:
+        return {"ok": True, "user": "anonymous"}
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if username == AUTH_USER and password == AUTH_PASSWORD:
+        request.session["user"] = username
+        return {"ok": True, "user": username}
+    raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+
+@app.post("/api/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    if not AUTH_ENABLED:
+        return {"auth_required": False, "logged_in": True, "user": "anonymous"}
+    user = request.session.get("user")
+    return {"auth_required": True, "logged_in": bool(user), "user": user or ""}
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +388,67 @@ async def delete_brand_file(brand: str, filename: str, current_user: str = Depen
 
 
 # ---------------------------------------------------------------------------
+# API: Prompts (per brand)
+# ---------------------------------------------------------------------------
+def _prompts_path(brand: str) -> Path:
+    return INPUTS_DIR / brand / "prompts.json"
+
+
+def _load_prompts(brand: str) -> list[dict]:
+    p = _prompts_path(brand)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_prompts(brand: str, prompts: list[dict]) -> None:
+    p = _prompts_path(brand)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(prompts, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.get("/api/brands/{brand}/prompts")
+async def list_prompts(brand: str, current_user: str = Depends(get_current_user)):
+    return _load_prompts(brand)
+
+
+@app.post("/api/brands/{brand}/prompts")
+async def create_prompt(brand: str, body: dict, current_user: str = Depends(get_current_user)):
+    name = body.get("name", "").strip()
+    content = body.get("content", "").strip()
+    if not name or not content:
+        raise HTTPException(status_code=400, detail="名称和内容不能为空")
+    prompts = _load_prompts(brand)
+    pid = uuid.uuid4().hex[:8]
+    prompts.append({"id": pid, "name": name, "content": content})
+    _save_prompts(brand, prompts)
+    return {"id": pid, "name": name, "content": content}
+
+
+@app.put("/api/brands/{brand}/prompts/{pid}")
+async def update_prompt(brand: str, pid: str, body: dict, current_user: str = Depends(get_current_user)):
+    prompts = _load_prompts(brand)
+    for p in prompts:
+        if p["id"] == pid:
+            p["name"] = body.get("name", p["name"]).strip()
+            p["content"] = body.get("content", p["content"]).strip()
+            _save_prompts(brand, prompts)
+            return p
+    raise HTTPException(status_code=404, detail="Prompt 不存在")
+
+
+@app.delete("/api/brands/{brand}/prompts/{pid}")
+async def delete_prompt(brand: str, pid: str, current_user: str = Depends(get_current_user)):
+    prompts = _load_prompts(brand)
+    prompts = [p for p in prompts if p["id"] != pid]
+    _save_prompts(brand, prompts)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # API: Tasks
 # ---------------------------------------------------------------------------
 @app.post("/api/tasks")
@@ -385,7 +470,6 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
     with _lock:
         if _running:
             raise HTTPException(status_code=429, detail="已有任务在运行，请等待完成")
-        _running = True
 
     task_id = uuid.uuid4().hex[:12]
     task = Task(
@@ -403,6 +487,7 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
 
     with _lock:
         _tasks[task_id] = task
+        _running = True
 
     thread = threading.Thread(target=_run_manual_pipeline, args=(task,), daemon=True)
     thread.start()
@@ -648,88 +733,4 @@ def _task_dict(task: Task) -> dict[str, Any]:
         "labels": task.labels,
         "variants": task.variants,
         "error": task.error,
-        "unique_src_video": task.unique_src_video,
     }
-
-
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
-@app.post("/api/auth/login")
-async def login(body: dict, request: Request):
-    if not AUTH_ENABLED:
-        return {"ok": True, "user": "anonymous"}
-    user = (body.get("user") or body.get("username") or "").strip()
-    password = body.get("password", "").strip()
-    if user == AUTH_USER and password == AUTH_PASSWORD:
-        request.session["user"] = user
-        return {"ok": True, "user": user}
-    raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-
-@app.post("/api/auth/logout")
-async def logout(request: Request):
-    request.session.clear()
-    return {"ok": True}
-
-
-@app.get("/api/auth/status")
-async def auth_status(current_user: str = Depends(get_current_user)):
-    return {"enabled": AUTH_ENABLED, "user": current_user}
-
-
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
-def _load_prompts(brand: str) -> list[dict]:
-    path = INPUTS_DIR / brand / "prompts.json"
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
-
-
-def _save_prompts(brand: str, prompts: list[dict]) -> None:
-    path = INPUTS_DIR / brand / "prompts.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(prompts, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-@app.get("/api/brands/{brand}/prompts")
-async def list_prompts(brand: str, current_user: str = Depends(get_current_user)):
-    return _load_prompts(brand)
-
-
-@app.post("/api/brands/{brand}/prompts")
-async def create_prompt(brand: str, body: dict, current_user: str = Depends(get_current_user)):
-    name = body.get("name", "").strip()
-    content = body.get("content", "").strip()
-    if not name or not content:
-        raise HTTPException(status_code=400, detail="名称和内容不能为空")
-    prompts = _load_prompts(brand)
-    pid = uuid.uuid4().hex[:8]
-    prompts.append({"id": pid, "name": name, "content": content})
-    _save_prompts(brand, prompts)
-    return {"id": pid, "name": name, "content": content}
-
-
-@app.put("/api/brands/{brand}/prompts/{pid}")
-async def update_prompt(brand: str, pid: str, body: dict, current_user: str = Depends(get_current_user)):
-    prompts = _load_prompts(brand)
-    for p in prompts:
-        if p["id"] == pid:
-            p["name"] = body.get("name", p["name"]).strip()
-            p["content"] = body.get("content", p["content"]).strip()
-            _save_prompts(brand, prompts)
-            return p
-    raise HTTPException(status_code=404, detail="Prompt 不存在")
-
-
-@app.delete("/api/brands/{brand}/prompts/{pid}")
-async def delete_prompt(brand: str, pid: str, current_user: str = Depends(get_current_user)):
-    prompts = _load_prompts(brand)
-    prompts = [p for p in prompts if p["id"] != pid]
-    _save_prompts(brand, prompts)
-    return {"ok": True}
