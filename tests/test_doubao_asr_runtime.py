@@ -39,6 +39,8 @@ def test_doubao_resource_id_env_override(monkeypatch) -> None:
     monkeypatch.setenv("DOUBAO_ASR_RESOURCE_ID", "volc.bigasr.auc")
     monkeypatch.setattr("vcut.stages.asr._extract_audio_base64", lambda _: "ZmFrZQ==")
     monkeypatch.setattr("vcut.stages.asr.requests.post", fake_post)
+    monkeypatch.setattr("pathlib.Path.exists", lambda _: True)
+    monkeypatch.setattr("pathlib.Path.is_file", lambda _: True)
 
     transcribe_with_doubao_flash(
         "dummy.mp4",
@@ -64,6 +66,8 @@ def test_doubao_403_guidance_for_not_granted_resource(monkeypatch) -> None:
     monkeypatch.delenv("DOUBAO_ASR_RESOURCE_ID", raising=False)
     monkeypatch.setattr("vcut.stages.asr._extract_audio_base64", lambda _: "ZmFrZQ==")
     monkeypatch.setattr("vcut.stages.asr.requests.post", fake_post)
+    monkeypatch.setattr("pathlib.Path.exists", lambda _: True)
+    monkeypatch.setattr("pathlib.Path.is_file", lambda _: True)
 
     with pytest.raises(RuntimeError, match="DOUBAO_ASR_RESOURCE_ID"):
         transcribe_with_doubao_flash("dummy.mp4", asr_config={"doubao": {}})

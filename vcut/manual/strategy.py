@@ -1,4 +1,4 @@
-﻿"""Manual label-based strategy generation for MVP flow."""
+"""Manual label-based strategy generation for MVP flow."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import Callable
 
@@ -114,18 +115,36 @@ def _build_llm_candidates(
         candidates = grouped.get(label, [])
         if not candidates:
             raise ValueError(f"No segments found for label: {label}")
-        payload[label] = [
-            {
-                "segment_id": str(item.get("segment_id", "")),
-                "src_video": str(item.get("src_video", "")),
-                "start": float(item.get("start", 0.0)),
-                "end": float(item.get("end", 0.0)),
-                "duration": float(item.get("duration", 0.0)),
-                "transcript_text": str(item.get("transcript_text", "")).strip(),
-            }
-            for item in candidates
-        ]
+        payload[label] = [_candidate_entry(item) for item in candidates]
     return payload
+
+
+def _candidate_entry(item: dict) -> dict:
+    """Build a single candidate entry for the LLM prompt."""
+    entry = {
+        "segment_id": str(item.get("segment_id", "")),
+        "src_video": str(item.get("src_video", "")),
+        "start": float(item.get("start", 0.0)),
+        "end": float(item.get("end", 0.0)),
+        "duration": float(item.get("duration", 0.0)),
+        "transcript_text": str(item.get("transcript_text", "")).strip(),
+    }
+    multimodal = str(item.get("multimodal_summary", "")).strip()
+    if multimodal:
+        entry["multimodal_summary"] = multimodal
+
+    visual = item.get("visual_description", {})
+    if visual and visual.get("opening_frame"):
+        entry["visual"] = {
+            "energy": visual.get("visual_energy", "medium"),
+            "opening": visual.get("opening_frame", ""),
+            "closing": visual.get("closing_frame", ""),
+            "style": visual.get("visual_style", ""),
+            "mood": visual.get("mood", ""),
+            "roles": visual.get("suitable_roles", ["demo"]),
+            "quality": visual.get("quality_score", 5),
+        }
+    return entry
 
 
 def _select_with_llm(
@@ -138,6 +157,8 @@ def _select_with_llm(
     llm_endpoint: str | None,
     prior_plans: list[list[dict]] | None = None,
     unique_src_video: bool = False,
+    retry_feedback: str | None = None,
+    used_combinations: list[list[str]] | None = None,
 ) -> list[dict]:
     api_key_env = str(llm_api_key_env or "").strip() or "OPENAI_API_KEY"
     api_key = os.getenv(api_key_env, "").strip()
@@ -179,6 +200,29 @@ def _select_with_llm(
         "3. Choose segments that best serve the user's goal.\n"
     )
 
+    # Add visual understanding instructions if data is present
+    has_visual = any(
+        c.get("visual") or c.get("multimodal_summary")
+        for lbl in candidates_by_label.values()
+        for c in lbl
+    )
+    if has_visual:
+        system_content += (
+            "\n## Visual Understanding\n"
+            "Each candidate may include 'visual' and 'multimodal_summary' with:\n"
+            "- energy: high/medium/low (visual intensity)\n"
+            "- opening/closing: first/last frame description\n"
+            "- style: shooting style (e.g. overhead product shot, handheld vlog)\n"
+            "- mood: visual emotion\n"
+            "- roles: suggested narrative roles (hook/setup/demo/proof/closing)\n"
+            "- quality: visual quality score 1-10\n\n"
+            "Use visual info to:\n"
+            "1. Pick HIGH energy + strong opening for HOOK.\n"
+            "2. Ensure visual style consistency across adjacent segments.\n"
+            "3. Match visual mood to narrative arc.\n"
+            "4. Check closing→opening frame transitions.\n"
+        )
+
     system_content += (
         "\n## Output Format\n"
         'Return a JSON object with key "items", an array where each element has:\n'
@@ -203,6 +247,18 @@ def _select_with_llm(
             'If you cannot find a valid assignment, return {"error": "reason"} instead.\n'
         )
 
+    if used_combinations:
+        combo_lines = [", ".join(combo) for combo in used_combinations]
+        system_content += (
+            "\n\n## CRITICAL: Previously Used Combinations (DO NOT REPEAT)\n"
+            "The following segment_id combinations have already been used in previous outputs.\n"
+            "You MUST NOT produce the exact same combination. Pick different segments.\n\n"
+        )
+        for i, line in enumerate(combo_lines, 1):
+            system_content += f"  {i}. [{line}]\n"
+
+    if retry_feedback:
+        system_content += "\n\n## IMPORTANT: Previous Attempt Failed\n" + retry_feedback
     messages = [
         {"role": "system", "content": system_content},
         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
@@ -221,6 +277,11 @@ def _select_with_llm(
         raise RuntimeError("Manual LLM selector did not return a valid list.")
 
     by_id = {str(item.get("segment_id", "")): item for item in segments}
+    # 建立标准化的 segment_id 查找表，解决 Unicode 编码不一致问题
+    def _norm_id(s: str) -> str:
+        return unicodedata.normalize("NFC", s.strip())
+    by_id_norm = {_norm_id(k): v for k, v in by_id.items()}
+
     selected: list[dict] = []
     for idx, label in enumerate(labels):
         if idx >= len(items):
@@ -230,7 +291,7 @@ def _select_with_llm(
         if picked_label != label:
             raise RuntimeError("Manual LLM selector label order mismatch.")
         segment_id = str(record.get("segment_id", "")).strip()
-        segment = by_id.get(segment_id)
+        segment = by_id.get(segment_id) or by_id_norm.get(_norm_id(segment_id))
         if not segment:
             raise RuntimeError(f"Manual LLM selector picked unknown segment_id: {segment_id}")
         
@@ -256,7 +317,6 @@ def _select_with_llm(
 def _resolve_ffprobe_command() -> str:
     from vcut.io.ffmpeg_utils import resolve_ffprobe_command
     return resolve_ffprobe_command()
-    return "ffprobe"
 
 
 def _probe_duration_seconds(src_video: str) -> float | None:
@@ -396,8 +456,20 @@ def build_manual_edit_plans(
     llm_api_key_env: str | None = None,
     llm_endpoint: str | None = None,
     unique_src_video: bool = False,
+    variant_offset: int = 0,
+    prior_plans: list[list[dict]] | None = None,
+    used_combinations: list[list[str]] | None = None,
 ) -> list[list[dict]]:
-    """Build one or more plans using rotated deterministic picks."""
+    """Build one or more plans using rotated deterministic picks.
+
+    Args:
+        variant_offset: Starting variant index for deterministic rotation.
+            Use to continue generating after dedup removed some plans.
+        prior_plans: Previously generated plans (from this or prior batches).
+            Passed to LLM to avoid re-selecting the same segments.
+        used_combinations: Historical segment_id combinations from used_plan_signatures.txt.
+            Passed to LLM prompt so it avoids repeating exact same combinations.
+    """
     count = max(1, int(variants))
     normalized_labels = [
         normalize_manual_label(str(label).strip())
@@ -407,38 +479,54 @@ def build_manual_edit_plans(
     if not normalized_labels:
         raise ValueError("labels cannot be empty in manual mode.")
 
-    plans: list[list[dict]] = []
+    plans: list[list[dict]] = list(prior_plans or [])
     for idx in range(count):
+        variant_index = variant_offset + idx
         if use_llm:
-            try:
-                chosen = _select_with_llm(
-                    segments=segments,
-                    labels=normalized_labels,
-                    llm_goal=llm_goal,
-                    llm_model_name=llm_model_name,
-                    llm_api_key_env=llm_api_key_env,
-                    llm_endpoint=llm_endpoint,
-                    prior_plans=plans,
-                    unique_src_video=unique_src_video,
-                )
-                plan = _build_plan_from_selected_segments(
-                    selected=chosen,
-                    max_total_duration=max_total_duration,
-                )
-                plan = enforce_not_identical_to_source(plan)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("LLM generation failed, falling back to deterministic plan: %s", e, exc_info=True)
-                plan = build_manual_edit_plan(
-                    segments=segments,
-                    labels=normalized_labels,
-                    variant_index=idx,
-                    max_total_duration=max_total_duration,
-                )
+            max_retries = 2
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    feedback = None
+                    if last_error:
+                        feedback = (
+                            f"Your previous selection violated a constraint: {last_error}\n"
+                            f"Please fix this. Ensure each label uses a DIFFERENT src_video."
+                        )
+                    chosen = _select_with_llm(
+                        segments=segments,
+                        labels=normalized_labels,
+                        llm_goal=llm_goal,
+                        llm_model_name=llm_model_name,
+                        llm_api_key_env=llm_api_key_env,
+                        llm_endpoint=llm_endpoint,
+                        prior_plans=plans,
+                        unique_src_video=unique_src_video,
+                        retry_feedback=feedback,
+                        used_combinations=used_combinations,
+                    )
+                    plan = _build_plan_from_selected_segments(
+                        selected=chosen,
+                        max_total_duration=max_total_duration,
+                    )
+                    plan = enforce_not_identical_to_source(plan)
+                    last_error = None
+                    break
+                except Exception as e:  # noqa: BLE001
+                    last_error = str(e)
+                    logger.warning("LLM attempt %d/%d failed: %s", attempt + 1, max_retries + 1, e)
+                    if attempt < max_retries:
+                        logger.info("Retrying with feedback...")
+                        continue
+                    logger.error("LLM failed after %d attempts, not falling back.", max_retries + 1)
+                    raise RuntimeError(
+                        f"LLM 选片失败（已重试 {max_retries + 1} 次）：{last_error}"
+                    ) from e
         else:
             plan = build_manual_edit_plan(
                 segments=segments,
                 labels=normalized_labels,
-                variant_index=idx,
+                variant_index=variant_index,
                 max_total_duration=max_total_duration,
             )
         plans.append(plan)

@@ -45,13 +45,6 @@ DEFAULT_CONFIG: dict = {
         "understanding": DEFAULT_MODEL_NAMES["understanding"],
         "strategy": DEFAULT_MODEL_NAMES["strategy"],
     },
-    "input": {
-        "extensions": [".mp4", ".mov", ".avi", ".mkv"],
-    },
-    "artifacts": {
-        "videos_dir": "videos",
-        "catalog_json": "catalog.json",
-    },
     "asr": {
         "model_name": DEFAULT_MODEL_NAMES["asr"],
         "language": "zh",
@@ -74,16 +67,6 @@ DEFAULT_CONFIG: dict = {
             "model_name": DEFAULT_MODEL_NAMES["asr"],
         },
     },
-    "scene": {
-        "threshold": 27.0,
-        "min_shot_duration": 0.5,
-        "shots_json": "shots.json",
-        "keyframes_dir": "keyframes",
-    },
-    "alignment": {
-        "asset_pool_json": "asset_pool.json",
-        "asset_pool_jsonl": "asset_pool.jsonl",
-    },
     "understanding": {
         "model_name": DEFAULT_MODEL_NAMES["understanding"],
         "api_key_env": DEFAULT_API_CONFIG["understanding"]["api_key_env"],
@@ -99,10 +82,6 @@ DEFAULT_CONFIG: dict = {
         "model_name": DEFAULT_MODEL_NAMES["strategy"],
         "api_key_env": DEFAULT_API_CONFIG["strategy"]["api_key_env"],
         "endpoint": DEFAULT_API_CONFIG["strategy"]["endpoint"],
-        "target_duration": 60,
-        "style": "general",
-        "max_candidates": 50,
-        "max_candidates_per_video": 10,
         "min_clip_duration": 3.0,
         "max_clip_duration": 30,
         "edit_plan_json": "edit_plan.json",
@@ -114,13 +93,6 @@ DEFAULT_CONFIG: dict = {
         "audio_codec": "aac",
         "overwrite": True,
         "cleanup_on_success": True,
-    },
-    "cache": {
-        "enabled": True,
-        "rebuild_asr": False,
-        "rebuild_scene": False,
-        "rebuild_keyframes": False,
-        "rebuild_understanding": False,
     },
 }
 

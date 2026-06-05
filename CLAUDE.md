@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-VCut 是一个基于 Python 3.11+ 的本地优先自动视频剪辑系统。通过 AI 流水线处理输入视频：ASR（语音转文字）→ 场景检测 → 转录/镜头对齐 → 视觉理解 → LLM 策略 → FFmpeg 渲染。两种模式：**auto**（AI 驱动）和 **manual**（基于 xlsx 的片段选择）。
+VCut 是一个基于 Python 3.11+ 的本地优先自动视频剪辑系统。通过 AI 流水线处理输入视频：ASR（语音转文字）→ 场景检测 → 转录/镜头对齐 → 视觉理解 → LLM 策略 → FFmpeg 渲染。两种模式：**auto**（AI 驱动）和 **manual**（基于 xlsx 的片段选择）。提供 CLI 和 Web UI 两种入口。
 
 ## 常用命令
 
@@ -21,11 +21,17 @@ python -m pytest -q tests/test_alignment.py
 # 自动模式运行
 python main.py --input-video a.mp4 --input-video b.mp4 --goal "15-second montage" --output-video out.mp4
 
+# 自动模式（输入目录）
+python main.py --input-dir ./inputs --goal "short highlight" --output-video out.mp4
+
 # 手动模式运行
 python main.py --manual-xlsx plan.xlsx --manual-video-dir ./videos --labels "开头,中间段1,中间段2,结尾" --output-video out.mp4
 
-# 基于已有计划独立渲染
-python render_custom.py --plan artifacts/edit_plan.json --output artifacts/custom_render.mp4
+# 手动模式（启用 ASR+LLM 和 unique_src_video）
+python main.py --manual-xlsx plan.xlsx --manual-video-dir ./videos --labels "pain scene benefit cta" --manual-use-asr-llm --manual-unique-src-video --output-video out.mp4
+
+# Web 模式（Docker 默认）
+uvicorn vcut.web.app:app --host 0.0.0.0 --port 8080
 ```
 
 ## 架构
@@ -36,15 +42,16 @@ python render_custom.py --plan artifacts/edit_plan.json --output artifacts/custo
 
 **手动模式** (`vcut/core/pipeline_manual.py`)：加载 xlsx 片段 → 可选 ASR+LLM 选择以实现连贯流程 → 确定性或 LLM 引导的计划构建 → 历史去重 → 渲染。
 
-顶层路由在 `vcut/core/pipeline.py` 中分发到两种模式。
+顶层路由在 `vcut/core/pipeline.py` 中根据是否提供 `--manual-xlsx` 分发到两种模式。
 
 ### 包结构 (`vcut/`)
 
-- `core/` — 流水线编排：`pipeline.py`（路由）、`pipeline_auto.py`、`pipeline_manual.py`、`pipeline_paths.py`（制品路径解析）、`config.py`（YAML 配置深度合并 + 统一 API/模型覆盖）、`input_discovery.py`（视频文件发现、基于哈希的 video_id）
+- `core/` — 流水线编排：`pipeline.py`（路由）、`pipeline_auto.py`、`pipeline_manual.py`、`pipeline_paths.py`（制品路径解析）、`config.py`（YAML 配置深度合并 + 统一 API/模型覆盖）、`env.py`（.env 环境变量加载）、`input_discovery.py`（视频文件发现、基于哈希的 video_id）
 - `stages/` — 各流水线阶段：`asr.py`（豆包 Flash）、`scene_detect.py`（PySceneDetect）、`alignment.py`、`understanding.py`（通过 OpenAI 兼容 API 调用视觉 LLM）、`strategy.py`（LLM 剪辑计划+候选压缩）、`video_edit.py`（FFmpeg 裁剪拼接）
-- `manual/` — 手动模式：`segments.py`（xlsx 解析）、`strategy.py`（确定性/LLM 选择）、`asr.py`（缓存 ASR）
-- `io/` — `cache.py`（基于指纹的跳过逻辑）、`catalog.py`、`fingerprint.py`（SHA1 哈希）
+- `manual/` — 手动模式：`segments.py`（xlsx 解析）、`strategy.py`（确定性/LLM 选择）、`asr.py`（缓存 ASR）、`understanding.py`（手动视频理解）
+- `io/` — `cache.py`（基于指纹的跳过逻辑）、`catalog.py`、`fingerprint.py`（SHA1 哈希）、`ffmpeg_utils.py`（FFmpeg 工具函数）、`retry.py`（重试机制）
 - `models/models.py` — 数据类：`VideoInput`、`TranscriptionResult`、`AnalysisResult`、`EditPlan`、`RenderOutput`
+- `web/` — Web UI：`app.py`（FastAPI 应用，端口 8080）、`index.html`（前端页面）
 
 ### 关键外部服务
 
@@ -64,11 +71,14 @@ python render_custom.py --plan artifacts/edit_plan.json --output artifacts/custo
 
 基于指纹：`vcut/io/cache.py` + `vcut/io/fingerprint.py` 对输入+配置计算 SHA1 哈希。重复运行未变更输入时通过 `metadata.json` 复用缓存制品。
 
+### Docker 部署
+
+Dockerfile 基于 `python:3.11-slim`，内置 ffmpeg，暴露端口 8080，默认启动 Web 模式。数据目录：`/data/inputs`、`/data/output`、`/data/artifacts`。
+
 ## 开发规则
 
 - 仅修改与当前任务直接相关的文件
 - 如需修改已有函数签名，须先说明原因
 - 优先新增模块，少改核心流水线流程
 - 不硬编码绝对路径、模型路径、输出路径
-- 不引入数据库、Web 框架、Docker 或前端
 - 保持 `main.py` 为轻量 CLI 入口；逻辑放在 `vcut/` 中

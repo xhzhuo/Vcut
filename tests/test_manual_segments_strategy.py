@@ -183,13 +183,12 @@ def test_build_manual_edit_plans_with_llm_selection(monkeypatch) -> None:
     ]
 
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
-    monkeypatch.setattr(
-        "vcut.manual_strategy._call_openai_chat",
-        lambda messages, model_name, api_key, endpoint: (
-            '{"items":[{"label":"\\u75db\\u70b9","segment_id":"s1","reason":"ok"},'
-            '{"label":"\\u573a\\u666f","segment_id":"s2","reason":"ok"}]}'
-        ),
+    fake_llm = lambda messages, model_name, api_key, endpoint: (
+        '{"items":[{"label":"\\u75db\\u70b9","segment_id":"s1","reason":"ok"},'
+        '{"label":"\\u573a\\u666f","segment_id":"s2","reason":"ok"}]}'
     )
+    monkeypatch.setattr("vcut.stages.strategy._call_openai_chat", fake_llm)
+    monkeypatch.setattr("vcut.manual.strategy._call_openai_chat", fake_llm)
 
     plans = build_manual_edit_plans(
         segments=segments,

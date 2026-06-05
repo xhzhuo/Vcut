@@ -32,6 +32,8 @@
   /* Page containers */
   .page { display: none; }
   .page.active { display: block; }
+  .page.active { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
   /* Brand grid */
   .brand-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
@@ -87,6 +89,26 @@
   .toggle-switch input:checked + .toggle-slider { background: #4a9eff; }
   .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
 
+  /* Mode Selector */
+  .mode-selector { display: flex; gap: 12px; }
+  .mode-option {
+    flex: 1; padding: 16px; background: #111; border: 2px solid #333;
+    border-radius: 12px; cursor: pointer; transition: all 0.2s;
+    text-align: center; position: relative;
+  }
+  .mode-option:hover { border-color: #555; background: #1a1a1a; }
+  .mode-option.active {
+    border-color: #4a9eff; background: #0d1f33;
+    box-shadow: 0 0 0 1px #4a9eff, 0 2px 12px rgba(74, 158, 255, 0.15);
+  }
+  .mode-option.active::after {
+    content: "✓"; position: absolute; top: 8px; right: 10px;
+    font-size: 12px; color: #4a9eff; font-weight: 700;
+  }
+  .mode-icon { font-size: 28px; margin-bottom: 8px; }
+  .mode-label { font-size: 14px; font-weight: 600; color: #4a9eff; margin-bottom: 4px; }
+  .mode-desc { font-size: 12px; color: #888; }
+
   /* Buttons */
   .btn {
     width: 100%; padding: 14px; border: none; border-radius: 8px;
@@ -125,6 +147,14 @@
   }
   .stage-tag.active { background: #1a3a5c; color: #4a9eff; }
   .stage-tag.done { background: #1a3c2a; color: #4caf50; }
+
+  .btn-abort {
+    background: #ff4757; color: #fff; border: none; padding: 12px 32px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; margin-top: 16px;
+  }
+  .btn-abort:hover { background: #ff6b7a; }
+  .btn-abort:disabled { background: #444; color: #888; cursor: not-allowed; }
 
   /* Done / Error */
   .done-section { display: none; text-align: center; }
@@ -408,6 +438,22 @@
         <label for="unique-src-toggle" style="margin:0; cursor:pointer;">每个标签来自不同视频来源</label>
       </div>
 
+      <div class="form-group">
+        <label>分析模式</label>
+        <div class="mode-selector" id="mode-selector">
+          <div class="mode-option active" data-value="asr" onclick="selectMode(this)">
+            <div class="mode-icon">🎤</div>
+            <div class="mode-label">ASR</div>
+            <div class="mode-desc">语音转文字，速度快</div>
+          </div>
+          <div class="mode-option" data-value="asr+visual" onclick="selectMode(this)">
+            <div class="mode-icon">🎬</div>
+            <div class="mode-label">ASR + 视频理解</div>
+            <div class="mode-desc">画面分析 + 语音，更精准</div>
+          </div>
+        </div>
+      </div>
+
       <button class="btn btn-primary" id="start-btn">开始剪辑</button>
       <button class="btn-back" id="back-btn">返回选择品牌</button>
     </div>
@@ -419,11 +465,13 @@
         <span class="stage-tag" data-stage="starting">准备中</span>
         <span class="stage-tag" data-stage="segments">素材解析</span>
         <span class="stage-tag" data-stage="transcripts">语音识别</span>
+        <span class="stage-tag" data-stage="visual">视频理解</span>
         <span class="stage-tag" data-stage="strategy">策略生成</span>
         <span class="stage-tag" data-stage="render">视频渲染</span>
       </div>
       <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
       <div class="stage-text" id="stage-text">准备中...</div>
+      <button class="btn-abort" id="abort-btn" onclick="abortTask()">中止剪辑</button>
     </div>
 
     <!-- Step 4: Done -->
@@ -488,7 +536,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   const errEl = document.getElementById('login-error');
   btn.disabled = true; btn.textContent = '登录中...'; errEl.style.display = 'none';
   try {
-    const resp = await fetch('/api/login', {
+    const resp = await fetch('/api/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -509,7 +557,7 @@ document.getElementById('login-pass').addEventListener('keydown', (e) => {
 });
 
 async function doLogout() {
-  await fetch('/api/logout', { method: 'POST' });
+  await fetch('/api/auth/logout', { method: 'POST' });
   showLogin();
 }
 
@@ -517,7 +565,7 @@ async function doLogout() {
 const _origFetch = window.fetch;
 window.fetch = async function(...args) {
   const resp = await _origFetch.apply(this, args);
-  if (resp.status === 401 && !args[0].includes('/api/login') && !args[0].includes('/api/auth/status')) {
+  if (resp.status === 401 && !args[0].includes('/api/auth/login') && !args[0].includes('/api/auth/status')) {
     showLogin();
     throw new Error('未登录');
   }
@@ -622,6 +670,11 @@ function renderLabelTags() {
 
 document.getElementById('back-btn').addEventListener('click', () => showSection('brand'));
 
+function selectMode(el) {
+  document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
+  el.classList.add('active');
+}
+
 document.getElementById('start-btn').addEventListener('click', async () => {
   if (!selectedBrand || brandLabels.length === 0) return;
   const btn = document.getElementById('start-btn');
@@ -630,12 +683,23 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   const goal = document.getElementById('goal-input').value.trim();
   if (goal) body.goal = goal;
   body.unique_src_video = document.getElementById('unique-src-toggle').checked;
+  body.use_understanding = document.querySelector('.mode-option.active')?.dataset.value === 'asr+visual';
   try {
     const resp = await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '请求失败'); }
     const data = await resp.json();
     currentTaskId = data.id;
     document.getElementById('progress-title').textContent = `正在剪辑 - ${selectedBrand}`;
+    // Reset progress bar before showing progress section
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('stage-text').textContent = '准备中...';
+    document.querySelectorAll('.stage-tag').forEach(el => {
+      el.classList.remove('done', 'active');
+      // Hide visual stage tag when not using understanding mode
+      if (el.dataset.stage === 'visual') {
+        el.style.display = body.use_understanding ? '' : 'none';
+      }
+    });
     showSection('progress'); pollStatus();
   } catch (e) { showError(e.message); }
   finally { btn.disabled = false; btn.textContent = '开始剪辑'; }
@@ -645,10 +709,19 @@ async function pollStatus() {
   if (!currentTaskId) return;
   try {
     const resp = await fetch(`/api/tasks/${currentTaskId}`);
+    if (!resp.ok) {
+      // Task not found (e.g. server restarted) — stop polling
+      if (resp.status === 404) {
+        showError('任务丢失（服务器可能已重启），请重新提交');
+        return;
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
     const data = await resp.json();
-    updateProgress(data.stage, data.progress);
+    updateProgress(data.stage || 'starting', data.progress || 0);
     if (data.status === 'done') { showDone(data); return; }
     if (data.status === 'failed') { showError(data.error || '未知错误'); return; }
+    if (data.status === 'aborted') { showError('剪辑已中止'); return; }
     pollTimer = setTimeout(pollStatus, 1500);
   } catch (e) { pollTimer = setTimeout(pollStatus, 3000); }
 }
@@ -663,10 +736,10 @@ function showSection(name) {
 
 function updateProgress(stage, pct) {
   document.getElementById('progress-bar').style.width = pct + '%';
-  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',visual:'视频理解',strategy:'策略生成',render:'视频渲染',complete:'完成'};
   document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
   document.querySelectorAll('.stage-tag').forEach(el => {
-    const s = el.dataset.stage, order = ['starting','segments','transcripts','strategy','render'];
+    const s = el.dataset.stage, order = ['starting','segments','transcripts','visual','strategy','render'];
     el.classList.toggle('done', order.indexOf(s) < order.indexOf(stage));
     el.classList.toggle('active', s === stage);
   });
@@ -680,11 +753,31 @@ function showDone(data) {
 
 function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
 
+async function abortTask() {
+  if (!currentTaskId) return;
+  const btn = document.getElementById('abort-btn');
+  btn.disabled = true; btn.textContent = '中止中...';
+  try {
+    const resp = await fetch(`/api/tasks/${currentTaskId}/abort`, { method: 'POST' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '中止失败'); }
+    showError('剪辑已中止');
+  } catch (e) { showError(e.message); }
+  finally { btn.disabled = false; btn.textContent = '中止剪辑'; }
+}
+
 function resetUI() {
   currentTaskId = null; selectedBrand = null; brandLabels = [];
   document.getElementById('variants-input').value = '1';
   document.getElementById('goal-input').value = '';
   document.getElementById('prompt-select').innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+  document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
+  document.querySelector('.mode-option[data-value="asr"]').classList.add('active');
+  // Reset progress bar and stage tags
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('stage-text').textContent = '准备中...';
+  document.querySelectorAll('.stage-tag').forEach(el => {
+    el.classList.remove('done', 'active');
+  });
   showSection('brand'); loadBrands();
   if (pollTimer) clearTimeout(pollTimer);
 }
@@ -784,7 +877,7 @@ function renderFilePanel(brand, files) {
           <span class="file-size">${f.size_mb} MB</span>
           <span class="file-type ${typeClass}">${f.type}</span>
         </div>
-        <button class="btn-delete-file" onclick="deleteFile('${brand}', '${f.name}')" title="删除">&times;</button>
+        <button class="btn-delete-file" onclick="deleteFile('${brand}', '${encodeURIComponent(f.name)}')" title="删除">&times;</button>
       </div>
     `;
   });
@@ -824,6 +917,7 @@ async function uploadFile(brand, input) {
 }
 
 async function deleteFile(brand, filename) {
+  filename = decodeURIComponent(filename);
   if (!confirm(`确定删除 ${filename}？`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
@@ -885,7 +979,7 @@ function renderPromptPanel(brand, prompts) {
 
   prompts.forEach(p => {
     html += `
-      <div class="file-row" style="align-items:flex-start;">
+      <div class="file-row" id="prompt-row-${p.id}" style="align-items:flex-start;">
         <div style="flex:1; min-width:0;">
           <div style="font-weight:500; margin-bottom:4px;">${p.name}</div>
           <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${p.content}</div>
@@ -930,17 +1024,36 @@ async function addPrompt(brand) {
 function editPrompt(brand, pid, encName, encContent) {
   const name = decodeURIComponent(encName);
   const content = decodeURIComponent(encContent);
-  const newName = prompt('Prompt 名称', name);
-  if (newName === null) return;
-  const newContent = prompt('Prompt 内容', content);
-  if (newContent === null) return;
-  fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
-    method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ name: newName, content: newContent })
-  }).then(() => {
+  const row = document.getElementById(`prompt-row-${pid}`);
+  if (!row) return;
+  row.innerHTML = `
+    <div style="flex:1; min-width:0;">
+      <input class="form-input" id="edit-prompt-name-${pid}" value="${name.replace(/"/g, '&quot;')}" style="margin-bottom:6px; font-size:13px;">
+      <textarea class="form-input" id="edit-prompt-content-${pid}" rows="4" style="font-size:13px;">${content}</textarea>
+    </div>
+    <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px; align-self:flex-end;">
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="savePrompt('${brand}', '${pid}')">保存</button>
+      <button class="btn-sm" style="background:#333;color:#ccc;" onclick="togglePromptPanel('${brand}'); setTimeout(() => togglePromptPanel('${brand}'), 100);">取消</button>
+    </div>`;
+  document.getElementById(`edit-prompt-content-${pid}`).focus();
+}
+
+async function savePrompt(brand, pid) {
+  const nameEl = document.getElementById(`edit-prompt-name-${pid}`);
+  const contentEl = document.getElementById(`edit-prompt-content-${pid}`);
+  if (!nameEl || !contentEl) return;
+  const newName = nameEl.value.trim();
+  const newContent = contentEl.value.trim();
+  if (!newName || !newContent) { alert('名称和内容不能为空'); return; }
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: newName, content: newContent })
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
-  }).catch(e => alert('编辑失败: ' + e.message));
+  } catch (e) { alert('编辑失败: ' + e.message); }
 }
 
 async function deletePrompt(brand, pid) {
@@ -1045,7 +1158,7 @@ async function loadOutputs() {
   if (!brand) { list.innerHTML = ''; return; }
 
   try {
-    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`);
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`, {cache: 'no-cache'});
     const outputs = await resp.json();
 
     if (outputs.length === 0) {
@@ -1070,8 +1183,8 @@ async function loadOutputs() {
         </div>
         <div class="output-actions">
           <button class="btn-icon" onclick="event.stopPropagation(); window.open('/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(v.name)}/download')">下载</button>
-          <button class="btn-icon" onclick="event.stopPropagation(); renameOutput('${brand}', '${v.name}')">重命名</button>
-          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteOutput('${brand}', '${v.name}')">删除</button>
+          <button class="btn-icon" onclick="event.stopPropagation(); renameOutput('${brand}', '${encodeURIComponent(v.name)}')">重命名</button>
+          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteOutput('${brand}', '${encodeURIComponent(v.name)}')">删除</button>
         </div>
       `;
       header.onclick = () => toggleOutputBody(idx);
@@ -1085,24 +1198,28 @@ async function loadOutputs() {
       // Edit plan
       let planHtml = '';
       if (v.plan && Array.isArray(v.plan) && v.plan.length > 0) {
-        planHtml = `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>
-            <table class="plan-table">
-              <tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>
-              ${v.plan.map((item, i) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td>${item.video_id || '-'}</td>
-                  <td>${fmtTime(item.start)} - ${fmtTime(item.end)}</td>
-                  <td>${(item.duration || (item.end - item.start)).toFixed(1)}s</td>
-                  <td><span class="plan-role">${item.label || '-'}</span></td>
-                  <td class="plan-reason">${item.reason || '-'}</td>
-                </tr>
-              `).join('')}
-            </table>
-          </div>
-        `;
+        try {
+          const rows = v.plan.map((item, i) => {
+            const dur = (item.duration || (item.end - item.start));
+            const durStr = (typeof dur === 'number' && !isNaN(dur)) ? dur.toFixed(1) + 's' : '-';
+            return '<tr>'
+              + '<td>' + (i + 1) + '</td>'
+              + '<td>' + (item.video_id || '-') + '</td>'
+              + '<td>' + fmtTime(item.start) + ' - ' + fmtTime(item.end) + '</td>'
+              + '<td>' + durStr + '</td>'
+              + '<td><span class="plan-role">' + (item.label || '-') + '</span></td>'
+              + '<td class="plan-reason">' + (item.reason || '-') + '</td>'
+              + '</tr>';
+          }).join('');
+          planHtml = '<div style="margin-bottom:12px;">'
+            + '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>'
+            + '<table class="plan-table">'
+            + '<tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>'
+            + rows
+            + '</table></div>';
+        } catch (planErr) {
+          planHtml = '<div style="color:#ff6b6b;font-size:13px;">剪辑方案渲染出错: ' + planErr.message + '</div>';
+        }
       } else {
         planHtml = '<div style="color:#666;font-size:13px;margin-bottom:12px;">无剪辑方案数据</div>';
       }
@@ -1178,9 +1295,32 @@ async function submitFeedback(brand, filename, idx) {
   }
 }
 
-async function renameOutput(brand, oldName) {
-  const newName = prompt('输入新名称:', oldName);
-  if (!newName || newName === oldName) return;
+function renameOutput(brand, oldName) {
+  oldName = decodeURIComponent(oldName);
+  // Find the output card containing this button
+  const cards = document.querySelectorAll('.output-card');
+  for (const card of cards) {
+    const nameSpan = card.querySelector('.output-name');
+    if (nameSpan && nameSpan.textContent === oldName) {
+      const actions = card.querySelector('.output-actions');
+      if (!actions) return;
+      actions.innerHTML = `
+        <input class="form-input" id="rename-output-input" value="${oldName.replace(/"/g, '&quot;')}" style="width:200px; padding:6px 10px; font-size:13px;">
+        <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="saveRename('${brand}', '${encodeURIComponent(oldName)}')">保存</button>
+        <button class="btn-sm" style="background:#333;color:#ccc;" onclick="loadOutputs()">取消</button>`;
+      document.getElementById('rename-output-input').focus();
+      document.getElementById('rename-output-input').select();
+      break;
+    }
+  }
+}
+
+async function saveRename(brand, oldNameEnc) {
+  const oldName = decodeURIComponent(oldNameEnc);
+  const input = document.getElementById('rename-output-input');
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName || newName === oldName) { loadOutputs(); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(oldName)}`, {
       method: 'PUT',
@@ -1191,10 +1331,12 @@ async function renameOutput(brand, oldName) {
     loadOutputs();
   } catch (e) {
     alert('重命名失败: ' + e.message);
+    loadOutputs();
   }
 }
 
 async function deleteOutput(brand, filename) {
+  filename = decodeURIComponent(filename);
   if (!confirm(`确定删除成品视频 ${filename}？`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(filename)}`, { method: 'DELETE' });
