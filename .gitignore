@@ -17,6 +17,8 @@ venv/
 # Project Artifacts
 artifacts/
 inputs/
+output/
+docs/videos/
 test_artifacts/
 test_artifacts_cache/
 test_artifacts_multi/
@@ -31,6 +33,9 @@ pytest-cache-files-*/
 
 # Claude Code
 .claude/
+
+# Archived temporary files
+_archived/
 
 # OS
 .DS_Store

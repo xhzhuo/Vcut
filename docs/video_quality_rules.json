@@ -1,0 +1,297 @@
+{
+  "version": "1.1",
+  "source": "AI Agent——人工打标素材表",
+  "source_url": "https://w6pz91x4e9.feishu.cn/wiki/NqltwIgFuiZZnRkF7APcLUVvnWe?sheet=hPUaFB",
+  "exported_at": "2026-06-02",
+  "categories": {
+    "technical": {
+      "label": "技术问题",
+      "rules": [
+        {
+          "id": "T1",
+          "name": "批量生成完整性",
+          "severity": "high",
+          "check": "batch_count == target_count",
+          "description": "提交多条任务时，实际生成数量应等于目标数量"
+        },
+        {
+          "id": "T2",
+          "name": "音画同步",
+          "severity": "high",
+          "check": "abs(audio_end - video_end) < 1s",
+          "description": "音频与视频时间轴一致，关键话术与画面切换对齐"
+        },
+        {
+          "id": "T3",
+          "name": "画面连续性",
+          "severity": "high",
+          "check": "no_freeze > 2s && no_deform",
+          "description": "无连续静止画面、无画面冻结但音频继续、无画面变形"
+        },
+        {
+          "id": "T4",
+          "name": "音频质量",
+          "severity": "high",
+          "check": "no_distortion && no_silence_gap",
+          "description": "无电音/杂音/乱码，音量均衡"
+        }
+      ]
+    },
+    "content": {
+      "label": "内容问题",
+      "rules": [
+        {
+          "id": "C1",
+          "name": "话术转场",
+          "severity": "medium",
+          "check": "transition_smooth",
+          "description": "转场前后话术逻辑连贯，节奏与口播匹配"
+        },
+        {
+          "id": "C2",
+          "name": "内容去重",
+          "severity": "medium",
+          "check": "no_duplicate_segments",
+          "description": "无连续重复痛点描述，信息点分布均匀"
+        },
+        {
+          "id": "C3",
+          "name": "产品信息",
+          "severity": "high",
+          "check": "product_mention_count in [1,2] && !consecutive",
+          "description": "产品名出现1-2次，不连续提及，与症状/成分对应明确"
+        },
+        {
+          "id": "C4",
+          "name": "逻辑连贯",
+          "severity": "medium",
+          "check": "logic_chain_complete",
+          "description": "痛点→成分→效果逻辑链完整，口播与画面一致"
+        }
+      ]
+    }
+  },
+  "brand_specific": {
+    "xinkang": {
+      "label": "新康",
+      "focus": ["C3", "C1", "C4"],
+      "common_issues": [
+        "产品名缺失",
+        "话术转接突兀",
+        "成分症状对应不明确"
+      ]
+    },
+    "baishi": {
+      "label": "百事",
+      "focus": ["T2", "T3", "T4"],
+      "common_issues": [
+        "音画不同步",
+        "画面卡顿/静止",
+        "音频电音/乱码"
+      ]
+    }
+  },
+  "video_samples": {
+    "base_path": "docs/videos",
+    "records": [
+      {
+        "seq": 1,
+        "brand": "xinkang",
+        "original_file": "1.mp4",
+        "local_file": "videos/xinkang/seq01_1.mp4",
+        "content_issue": "15-16秒连续提到两次产品名",
+        "program_issue": null,
+        "applied_rules": ["C3"],
+        "summary": "批量生成数量不统一；音视频播放异常；话术转场生硬、内容重复、产品信息问题"
+      },
+      {
+        "seq": 2,
+        "brand": "xinkang",
+        "original_file": "2.mp4",
+        "local_file": "videos/xinkang/seq02_2.mp4",
+        "content_issue": "5-6秒转场生硬（男性擤鼻涕场景直接切到女性桌前场景），6-12秒感冒症状描述（头晕头痛、喷嚏、鼻涕、鼻塞等）与0-5秒内容重复",
+        "program_issue": null,
+        "applied_rules": ["C2", "C1"]
+      },
+      {
+        "seq": 3,
+        "brand": "xinkang",
+        "original_file": "3.mp4",
+        "local_file": "videos/xinkang/seq03_3.mp4",
+        "content_issue": "人工标注：口播和花字没有提到产品名；API分析：15-30秒产品名'氨酚咖那敏片'被多次提及（0-1秒、6-7秒、10-11秒），存在矛盾需核实",
+        "program_issue": null,
+        "applied_rules": ["C3"]
+      },
+      {
+        "seq": 4,
+        "brand": "xinkang",
+        "original_file": "4.mp4",
+        "local_file": "videos/xinkang/seq04_4.mp4",
+        "content_issue": "人工标注：无；API发现：5-8秒与8-11秒内容高度重复（健身房场景展示药盒，镜头角度和药盒摆放几乎一致），11-12秒转场生硬（健身房全景→手部特写），3-5秒、5-8秒、8-11秒产品名频繁出现",
+        "program_issue": null,
+        "applied_rules": []
+      },
+      {
+        "seq": 5,
+        "brand": "xinkang",
+        "original_file": "5.mp4",
+        "local_file": "videos/xinkang/seq05_5.mp4",
+        "content_issue": "人工标注：无；API发现：15秒转场略显跳跃（吃药动作缺少过渡），30-32秒产品名'新康泰克'和'氨酚咖那敏片'被多次提及，30-32秒内容重复（同一产品多次展示），30-32秒逻辑跳跃（'现在正好有活动'→'囤着买更划算'缺乏铺垫）",
+        "program_issue": null,
+        "applied_rules": []
+      },
+      {
+        "seq": 6,
+        "brand": "baishi",
+        "original_file": "1.mp4",
+        "local_file": "videos/baishi/seq06_1.mp4",
+        "content_issue": "25-33秒画面和音频对不上，33-40秒只有音频画面卡住不动，40-59秒画面变形音频有电音，59秒到结尾画面卡住音频是电音（API返回400错误无法验证）",
+        "program_issue": "一起生成5条的时候只生成了3条，另外2条是重新补充生成的",
+        "applied_rules": ["T1", "T2", "T3", "T4"]
+      },
+      {
+        "seq": 7,
+        "brand": "baishi",
+        "original_file": "2.mp4",
+        "local_file": "videos/baishi/seq07_2.mp4",
+        "content_issue": "API发现：4-6秒音频有明显电子变声处理（电音），机械感强与其他人声不自然",
+        "program_issue": null,
+        "applied_rules": []
+      },
+      {
+        "seq": 8,
+        "brand": "baishi",
+        "original_file": "3.mp4",
+        "local_file": "videos/baishi/seq08_3.mp4",
+        "content_issue": "人工标注：45-51秒与前面22-44秒内容重复；API分析：3-7秒转场生硬（女生客厅→男生厨房），3-7秒与7-11秒核心信息重复（百事和浪浪山联名被两位主持人接连提及），产品名在短时间内被多次提及，位置不同需核实",
+        "program_issue": null,
+        "applied_rules": ["C2"]
+      },
+      {
+        "seq": 9,
+        "brand": "baishi",
+        "original_file": "4.mp4",
+        "local_file": "videos/baishi/seq09_4.mp4",
+        "content_issue": "25-30秒内容与前面无关联，30-49秒画面变形音频有电音，49秒后音频是乱码；API发现6-7秒和10-11秒转场生硬、画面卡顿，10-11秒转场效果导致画面不自然，0-3秒和4-6秒产品名位置过于突出",
+        "program_issue": null,
+        "applied_rules": ["C1", "T3", "T4"]
+      },
+      {
+        "seq": 10,
+        "brand": "baishi",
+        "original_file": "5.mp4",
+        "local_file": "videos/baishi/seq10_5.mp4",
+        "content_issue": "人工标注：30-32秒与前面28-30秒重复；API分析：0-15秒发现12-13秒转场生硬（办公室→室外门口），30-45秒发现00:09场景突变（办公室女生→另一环境男女）、产品名'百事'被提及至少4次、前后两部分叙事逻辑断裂，API未检测到28-32秒重复",
+        "program_issue": null,
+        "applied_rules": ["C2"]
+      },
+      {
+        "seq": 11,
+        "brand": "xinkang",
+        "original_file": "1.mp4",
+        "local_file": "videos/xinkang/seq11_1.mp4",
+        "content_issue": "13-15秒话术转接有点突兀；API发现45-54秒转场生硬（男子办公→产品字幕）、产品名'新康泰克氨酚咖那敏片'在5-8秒内重复出现",
+        "program_issue": "一起生成5条的时候只生成了4条，另外1条是重新补充生成的",
+        "applied_rules": ["C1", "T1"]
+      },
+      {
+        "seq": 12,
+        "brand": "xinkang",
+        "original_file": "2.mp4",
+        "local_file": "videos/xinkang/seq12_2.mp4",
+        "content_issue": "20-31口播有些奇怪，成分和症状对应不明确；API发现0-6秒与6-7秒转场生硬（对话→咳嗽特写），6-10秒症状展示与11-15秒文案重复，12-15秒产品名密集提及",
+        "program_issue": null,
+        "applied_rules": ["C4"]
+      },
+      {
+        "seq": 13,
+        "brand": "xinkang",
+        "original_file": "3.mp4",
+        "local_file": "videos/xinkang/seq13_3.mp4",
+        "content_issue": "没有提产品名；API发现30-41秒转场生硬（0-1秒药盒→电脑场景，3-4秒女生→男生），产品名在0秒和8-10秒重复提及，4-7秒促销逻辑与前段效果描述跳跃",
+        "program_issue": null,
+        "applied_rules": ["C3"]
+      },
+      {
+        "seq": 14,
+        "brand": "xinkang",
+        "original_file": "4.mp4",
+        "local_file": "videos/xinkang/seq14_4.mp4",
+        "content_issue": "9-11秒话术逻辑有问题；API发现0-3秒、3-5秒、5-6秒转场生硬（跳切无过渡），8-10秒内容重复（字幕已列7种症状后口述又重复），3-6秒产品名出现频率偏高",
+        "program_issue": null,
+        "applied_rules": ["C4"]
+      },
+      {
+        "seq": 15,
+        "brand": "xinkang",
+        "original_file": "5.mp4",
+        "local_file": "videos/xinkang/seq15_5.mp4",
+        "content_issue": "13-15秒话术转接有点突兀，24-35口播有些奇怪，成分和症状对应不明确；API发现0-15秒13-15秒台词重复（'尤其适合咱们这些'出现两次），15-30秒6-7秒转场生硬（对话→药盒特写），3-5秒与10-13秒症状内容重复，0-3秒产品名3秒内被提及两次",
+        "program_issue": null,
+        "applied_rules": ["C1", "C4"]
+      },
+      {
+        "seq": 16,
+        "brand": "baishi",
+        "original_file": "1.mp4",
+        "local_file": "videos/baishi/seq16_1.mp4",
+        "content_issue": "24-25秒画面和话术衔接都很突兀，33秒画面卡顿音频还在播放，41秒音画不同步，54秒音频结束画面继续播放到1分08秒（API返回400错误无法验证）",
+        "program_issue": "第一次生成5条只生成1条，第二次生4条生成2条，最后2条重新补充生成",
+        "applied_rules": ["T1", "T2", "T3", "C1"]
+      },
+      {
+        "seq": 17,
+        "brand": "baishi",
+        "original_file": "2.mp4",
+        "local_file": "videos/baishi/seq17_2.mp4",
+        "content_issue": "API发现：9-10秒转场生硬（办公室→室外），13-15秒产品名'百事'植入过于刻意（日常对话中特意带出品牌名），9-11秒外卖送达地点与画面不符（台词说送到家但画面是室内角落），4-5秒全勤奖与迟到的戏剧冲突逻辑跳跃",
+        "program_issue": null,
+        "applied_rules": []
+      },
+      {
+        "seq": 18,
+        "brand": "baishi",
+        "original_file": "3.mp4",
+        "local_file": "videos/baishi/seq18_3.mp4",
+        "content_issue": "48秒画面和话术衔接生硬；API发现15-30秒0-1秒转场生硬（手机屏幕→真人），6-10秒'金饭碗'概念重复提及，30-45秒3-4秒跳切（主持人姿态瞬间变化），9-11秒场景和服装突兀切换（厨房黑外套→衣帽间格子衬衫跳舞）",
+        "program_issue": null,
+        "applied_rules": ["C1"]
+      },
+      {
+        "seq": 19,
+        "brand": "baishi",
+        "original_file": "4.mp4",
+        "local_file": "videos/baishi/seq19_4.mp4",
+        "content_issue": "30秒画面卡顿音频继续播放且衔接生硬，1分14秒音频结束画面继续卡顿，1分57秒-3分09秒画面继续播放(无音频)速度比正常慢（API返回400错误无法验证）",
+        "program_issue": null,
+        "applied_rules": ["T3", "C1"]
+      },
+      {
+        "seq": 20,
+        "brand": "baishi",
+        "original_file": "5.mp4",
+        "local_file": "videos/baishi/seq20_5.mp4",
+        "content_issue": "人工标注：无；API分析：未发现问题",
+        "program_issue": null,
+        "applied_rules": []
+      }
+    ]
+  },
+  "severity_levels": {
+    "high": {
+      "label": "高",
+      "symbol": "🔴",
+      "action": "必须重新生成"
+    },
+    "medium": {
+      "label": "中",
+      "symbol": "🟡",
+      "action": "建议优化"
+    },
+    "low": {
+      "label": "低",
+      "symbol": "🟢",
+      "action": "可接受"
+    }
+  }
+}

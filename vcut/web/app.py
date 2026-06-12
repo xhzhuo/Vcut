@@ -22,6 +22,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import openpyxl
 import vcut.core.env  # noqa: F401 — load .env on import
+from vcut.core.pipeline_paths import variant_output_path
+from vcut.manual.review_defaults import DEFAULT_REVIEW_CRITERIA_ITEMS_ZH
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ OUTPUT_DIR = Path(os.getenv("VCUT_OUTPUT_DIR", str(Path(__file__).resolve().pare
 class Task:
     id: str
     brand: str
+    created_at: float = field(default_factory=time.time)
     goal: str = ""
     status: str = "pending"
     stage: str = ""
@@ -71,6 +74,7 @@ class Task:
     artifacts_subdir: str = ""
     unique_src_video: bool = False
     use_understanding: bool = False
+    review_criteria: str = ""
     process: subprocess.Popen | None = field(default=None, repr=False)
 
 _tasks: dict[str, Task] = {}
@@ -84,7 +88,6 @@ _MANUAL_STAGE_ORDER = [
     ("transcripts", "manual_transcripts.json", 40),
     ("visual", "manual_visual.json", 60),
     ("strategy", "edit_plan.json", 80),
-    ("render", None, 95),
 ]
 
 
@@ -94,25 +97,36 @@ def _detect_progress(task: Task) -> None:
 
     base = ARTIFACTS_DIR / task.artifacts_subdir if task.artifacts_subdir else ARTIFACTS_DIR
 
+    def _variant_stem(index: int) -> str:
+        return Path(variant_output_path(f"{task.id}.mp4", index)).stem
+
+    def _expected_variant_paths(root: Path, prefix: str, suffix: str) -> list[Path]:
+        count = max(1, int(task.variants or 1))
+        return [root / f"{prefix}{_variant_stem(idx)}{suffix}" for idx in range(1, count + 1)]
+
+    def _is_current_artifact(path: Path) -> bool:
+        return path.exists() and path.stat().st_mtime >= task.created_at
+
+    def _completed_current(paths: list[Path]) -> int:
+        return sum(1 for path in paths if _is_current_artifact(path))
+
     # Find the last completed stage
     last_stage = None
     last_pct = 0
 
     for stage_name, filename, pct in _MANUAL_STAGE_ORDER:
-        if filename is None:
-            # render stage - only set if all previous stages are done
-            if last_pct == 80:  # strategy completed (the stage before render)
-                task.stage = "render"
-                task.progress = 90
-            elif last_stage:
-                task.stage = last_stage
-                task.progress = last_pct
-            break
-
+        if stage_name == "visual" and not task.use_understanding:
+            continue
         if filename == "edit_plan.json":
-            exists = bool(list(base.glob("edit_plan_*.json")))
+            plan_paths = _expected_variant_paths(base, "edit_plan_", ".json")
+            plan_count = _completed_current(plan_paths)
+            exists = plan_count == len(plan_paths)
+            if 0 < plan_count < len(plan_paths):
+                task.stage = "strategy"
+                task.progress = min(79, 60 + int(20 * plan_count / len(plan_paths)))
+                break
         else:
-            exists = (base / filename).exists()
+            exists = _is_current_artifact(base / filename)
 
         if exists:
             last_stage = stage_name
@@ -123,8 +137,18 @@ def _detect_progress(task: Task) -> None:
                 task.stage = last_stage
                 task.progress = last_pct
             break
+    else:
+        if last_stage:
+            task.stage = last_stage
+            task.progress = last_pct
 
     if task.output_file and Path(task.output_file).exists():
+        output_paths = _expected_variant_paths(Path(task.output_file).parent, "", ".mp4")
+        output_count = sum(1 for path in output_paths if path.exists())
+        if output_count < len(output_paths):
+            task.stage = "render"
+            task.progress = min(95, 80 + int(15 * output_count / len(output_paths)))
+            return
         task.status = "done"
         task.stage = "complete"
         task.progress = 100
@@ -154,17 +178,15 @@ def _find_output_video(task: Task) -> str | None:
 
 
 def _cleanup_brand_artifacts(brand: str) -> None:
-    """Remove old pipeline artifacts that confuse progress detection."""
+    """Keep historical edit artifacts intact.
+
+    Progress detection is task-scoped by timestamp and task id, so old edit
+    plans/reviews remain available as audit records for generated videos.
+    """
     brand_dir = ARTIFACTS_DIR / brand
     if not brand_dir.exists():
         return
-    for pattern in ["manual_segments.json", "manual_transcripts.json", "manual_visual.json", "used_plan_signatures.txt"]:
-        for f in brand_dir.glob(pattern):
-            try:
-                f.unlink()
-                logger.info("Cleaned up old artifact: %s", f)
-            except OSError:
-                pass
+    logger.info("Preserving historical artifacts for brand: %s", brand)
 
 def _run_manual_pipeline(task: Task) -> None:
     try:
@@ -196,6 +218,9 @@ def _run_manual_pipeline(task: Task) -> None:
 
         if task.goal:
             cmd.extend(["--manual-goal", task.goal])
+
+        if task.review_criteria.strip():
+            cmd.extend(["--manual-review-criteria", task.review_criteria.strip()])
 
         env = os.environ.copy()
         env["VCUT_ARTIFACTS_DIR"] = str(ARTIFACTS_DIR)
@@ -435,6 +460,7 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
         variants=body.get("variants", 1),
         unique_src_video=body.get("unique_src_video", False),
         use_understanding=body.get("use_understanding", False),
+        review_criteria=str(body.get("review_criteria", "")).strip(),
         status="running",
         stage="starting",
         progress=0,
@@ -723,7 +749,10 @@ async def download_output(brand: str, filename: str, current_user: str = Depends
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = Path(__file__).parent / "index.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 def _task_dict(task: Task) -> dict[str, Any]:
@@ -739,6 +768,7 @@ def _task_dict(task: Task) -> dict[str, Any]:
         "error": task.error,
         "unique_src_video": task.unique_src_video,
         "use_understanding": task.use_understanding,
+        "review_criteria": task.review_criteria,
     }
 
 
@@ -765,7 +795,7 @@ async def logout(request: Request):
 
 @app.get("/api/auth/status")
 async def auth_status(current_user: str = Depends(get_current_user)):
-    return {"enabled": AUTH_ENABLED, "user": current_user}
+    return {"enabled": AUTH_ENABLED, "user": current_user, "logged_in": True}
 
 
 # ---------------------------------------------------------------------------
@@ -823,3 +853,94 @@ async def delete_prompt(brand: str, pid: str, current_user: str = Depends(get_cu
     prompts = [p for p in prompts if p["id"] != pid]
     _save_prompts(brand, prompts)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Review criteria presets
+# ---------------------------------------------------------------------------
+def _review_criteria_path() -> Path:
+    return INPUTS_DIR / "review_criteria.json"
+
+
+def _load_global_review_criteria_presets() -> list[dict]:
+    path = _review_criteria_path()
+    if not path.exists():
+        return []
+    try:
+        presets = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(presets, list):
+        return []
+    return [item for item in presets if isinstance(item, dict)]
+
+
+def _save_global_review_criteria_presets(presets: list[dict]) -> None:
+    path = _review_criteria_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(presets, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _review_criteria_response() -> list[dict]:
+    return [
+        {
+            "id": "__default__",
+            "name": "默认 Review 标准",
+            "content": DEFAULT_REVIEW_CRITERIA_ITEMS_ZH,
+            "readonly": True,
+        }
+    ] + _load_global_review_criteria_presets()
+
+
+@app.get("/api/review/default-criteria")
+async def default_review_criteria(current_user: str = Depends(get_current_user)):
+    return {"criteria": DEFAULT_REVIEW_CRITERIA_ITEMS_ZH}
+
+
+@app.get("/api/review/criteria")
+async def list_global_review_criteria(current_user: str = Depends(get_current_user)):
+    return _review_criteria_response()
+
+
+@app.post("/api/review/criteria")
+async def create_review_criteria(body: dict, current_user: str = Depends(get_current_user)):
+    name = str(body.get("name", "")).strip()
+    content = str(body.get("content", "")).strip()
+    if not name or not content:
+        raise HTTPException(status_code=400, detail="名称和内容不能为空")
+    presets = _load_global_review_criteria_presets()
+    pid = uuid.uuid4().hex[:8]
+    preset = {"id": pid, "name": name, "content": content}
+    presets.append(preset)
+    _save_global_review_criteria_presets(presets)
+    return preset
+
+
+@app.put("/api/review/criteria/{pid}")
+async def update_review_criteria(pid: str, body: dict, current_user: str = Depends(get_current_user)):
+    if pid == "__default__":
+        raise HTTPException(status_code=400, detail="默认 Review 标准不能修改")
+    presets = _load_global_review_criteria_presets()
+    for preset in presets:
+        if preset.get("id") == pid:
+            preset["name"] = str(body.get("name", preset.get("name", ""))).strip()
+            preset["content"] = str(body.get("content", preset.get("content", ""))).strip()
+            if not preset["name"] or not preset["content"]:
+                raise HTTPException(status_code=400, detail="名称和内容不能为空")
+            _save_global_review_criteria_presets(presets)
+            return preset
+    raise HTTPException(status_code=404, detail="Review 标准不存在")
+
+
+@app.delete("/api/review/criteria/{pid}")
+async def delete_review_criteria(pid: str, current_user: str = Depends(get_current_user)):
+    if pid == "__default__":
+        raise HTTPException(status_code=400, detail="默认 Review 标准不能删除")
+    presets = [p for p in _load_global_review_criteria_presets() if p.get("id") != pid]
+    _save_global_review_criteria_presets(presets)
+    return {"ok": True}
+
+
+@app.get("/api/brands/{brand}/review-criteria")
+async def list_brand_review_criteria(brand: str, current_user: str = Depends(get_current_user)):
+    return _review_criteria_response()

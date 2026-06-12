@@ -111,6 +111,31 @@ class TestNormalizeVisual:
         result = _normalize_visual({"scene_cut_points": [1.0, -2.0, 3.0]})
         assert result["scene_cut_points"] == [1.0, 3.0]
 
+    def test_selection_context_fields_are_descriptive(self):
+        result = _normalize_visual(
+            {
+                "shot_type": "usage_scene",
+                "main_subject": "hands applying product",
+                "action": "shows product texture",
+                "product_presence": "clear",
+                "scene_context": "bathroom counter",
+                "camera_motion": "static",
+                "transition_in": "after a pain point explanation",
+                "transition_out": "before user testimonial",
+                "visual_continuity_notes": "match with similar indoor lighting",
+                "role_fit_scores": {"demo": 9, "hook": 4, "invalid": 10},
+            }
+        )
+
+        assert result["shot_type"] == "usage_scene"
+        assert result["product_presence"] == "clear"
+        assert result["transition_out"] == "before user testimonial"
+        assert result["role_fit_scores"] == {"hook": 4, "demo": 9}
+
+    def test_invalid_product_presence_keeps_unknown(self):
+        result = _normalize_visual({"product_presence": "bad_clip"})
+        assert result["product_presence"] == "unknown"
+
 
 class TestExtractContentText:
     def test_normal_response(self):

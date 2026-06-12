@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from vcut.manual.review_defaults import DEFAULT_REVIEW_CRITERIA_ITEMS_ZH
+
 
 DEFAULT_MODEL_NAMES: dict[str, str] = {
     "asr": "bigmodel",
@@ -85,12 +87,31 @@ DEFAULT_CONFIG: dict = {
         "min_clip_duration": 3.0,
         "max_clip_duration": 30,
         "edit_plan_json": "edit_plan.json",
+        "quality": {
+            "enabled": True,
+            "duplicate_similarity_threshold": 0.86,
+            "min_text_chars_for_similarity": 8,
+            "product_keywords": [],
+            "min_product_mentions": 1,
+            "max_product_mentions": 2,
+        },
+        "review": {
+            "enabled": True,
+            "min_score": 85,
+            "criteria": DEFAULT_REVIEW_CRITERIA_ITEMS_ZH,
+        },
     },
     "render": {
         "enabled": True,
         "temp_dir": "render_tmp",
         "video_codec": "libx264",
         "audio_codec": "aac",
+        "audio_bitrate": "192k",
+        "target_fps": 30,
+        "target_audio_sample_rate": 44100,
+        "target_audio_channels": 2,
+        "normalize_clips": True,
+        "concat_stream_copy": False,
         "overwrite": True,
         "cleanup_on_success": True,
     },

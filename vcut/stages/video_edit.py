@@ -82,9 +82,8 @@ def _render_once(
             clips.append(clip_path)
             duration_estimate += max(0.0, end - start)
 
-        # cut_clip already normalizes resolution/fps/audio via render_config,
-        # so normalize_clips is redundant here. Skip it.
-        # concat_clips will try stream copy first, falling back to re-encode.
+        if bool(render_config.get("normalize_clips", True)):
+            clips = normalize_clips(clips, ffmpeg_cmd, render_config)
 
         concat_clips(clips, str(output_path), ffmpeg_cmd, render_config)
     except Exception:
@@ -228,7 +227,7 @@ def normalize_clips(
 
         af_parts = []
         if needs_audio_normalize:
-            af_parts.append(f"aresample={target_audio_sr}")
+            af_parts.append(f"aresample={target_audio_sr}:async=1:first_pts=0")
             if target_audio_ch == 1:
                 af_parts.append("aformat=channel_layouts=mono")
             elif target_audio_ch == 2:
@@ -285,7 +284,7 @@ def cut_clip(
     abitrate = str(render_config.get("audio_bitrate", "192k"))
 
     # Get target parameters from render_config
-    target_fps = int(render_config.get("target_fps", 30))
+    target_fps = float(render_config.get("target_fps", 30))
     target_width = int(render_config.get("target_width", 0))
     target_height = int(render_config.get("target_height", 0))
     target_audio_sr = int(render_config.get("target_audio_sample_rate", 44100))
@@ -353,8 +352,8 @@ def concat_clips(
 ) -> None:
     """Concatenate clips into final output video.
 
-    Tries stream copy first (fast, no quality loss), falls back to re-encoding
-    if copy fails (e.g. incompatible codecs between clips).
+    Re-encodes by default so mixed source timelines do not leak through to the
+    final MP4. Stream-copy concat can be re-enabled with render.concat_stream_copy.
     """
     if not clips:
         raise ValueError("No clips to concatenate.")
@@ -367,24 +366,25 @@ def concat_clips(
     overwrite = bool(render_config.get("overwrite", True))
     vcodec = str(render_config.get("video_codec", "libx264"))
     acodec = str(render_config.get("audio_codec", "aac"))
+    abitrate = str(render_config.get("audio_bitrate", "192k"))
+    use_stream_copy = bool(render_config.get("concat_stream_copy", False))
 
-    # Try stream copy first (fast, no quality loss)
-    copy_command = [
-        ffmpeg_cmd,
-        "-y" if overwrite else "-n",
-        "-fflags", "+genpts",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(concat_path),
-        "-c", "copy",
-        "-movflags", "+faststart",
-        str(output_path),
-    ]
-    try:
-        _run_ffmpeg(copy_command)
-        return
-    except Exception:
-        logger.info("Stream copy concat failed, falling back to re-encode")
+    if use_stream_copy:
+        copy_command = [
+            ffmpeg_cmd,
+            "-y" if overwrite else "-n",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_path),
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        try:
+            _run_ffmpeg(copy_command)
+            return
+        except Exception:
+            logger.info("Stream copy concat failed, falling back to re-encode")
 
     # Fallback: re-encode
     encode_command = [
@@ -397,6 +397,7 @@ def concat_clips(
         "-c:v", vcodec,
         "-preset", "fast",
         "-c:a", acodec,
+        "-b:a", abitrate,
         "-movflags", "+faststart",
         str(output_path),
     ]
@@ -422,5 +423,6 @@ def render_video(edit_plan: list[dict], output_video: str, render_config: dict) 
             sum(max(0.0, float(item.get("end", 0.0)) - float(item.get("start", 0.0))) for item in working_plan),
             3,
         ),
+        "adjusted_edit_plan": working_plan,
     }
 

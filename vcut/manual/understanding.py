@@ -34,9 +34,19 @@ VISUAL_FIELDS: dict[str, Any] = {
     "closing_frame": "",
     "visual_style": "",
     "mood": "neutral",
+    "shot_type": "",
+    "main_subject": "",
+    "action": "",
+    "product_presence": "unknown",
+    "scene_context": "",
+    "camera_motion": "",
+    "transition_in": "",
+    "transition_out": "",
+    "visual_continuity_notes": "",
     "text_overlays": [],
     "scene_cut_points": [],
     "suitable_roles": ["demo"],
+    "role_fit_scores": {},
     "quality_score": 5,
 }
 
@@ -49,29 +59,51 @@ def _default_visual_fields() -> dict[str, Any]:
         "closing_frame": "",
         "visual_style": "",
         "mood": "neutral",
+        "shot_type": "",
+        "main_subject": "",
+        "action": "",
+        "product_presence": "unknown",
+        "scene_context": "",
+        "camera_motion": "",
+        "transition_in": "",
+        "transition_out": "",
+        "visual_continuity_notes": "",
         "text_overlays": [],
         "scene_cut_points": [],
         "suitable_roles": ["demo"],
+        "role_fit_scores": {},
         "quality_score": 5,
     }
 
+# ── ffmpeg clip extraction ──────────────────────────────────────────────
+
 VISUAL_PROMPT = (
-    "你是一个专业视频剪辑师。分析这个视频片段，返回严格的 JSON（不要 markdown 包裹），字段如下：\n"
+    "You are a professional short-form video editor. Analyze this clip for edit selection context, "
+    "not for filtering or rejecting the clip. Return strict JSON only, no markdown.\n"
+    "Use descriptive fields only. Do not use downrank, reject, bad, or risk labels.\n"
     "{\n"
-    '  "visual_energy": "high/medium/low，画面能量感，high=动作快/镜头切换多/视觉冲击强，low=静态/舒缓",\n'
-    '  "opening_frame": "第一帧画面的简短描述（10字以内）",\n'
-    '  "closing_frame": "最后一帧画面的简短描述（10字以内）",\n'
-    '  "visual_style": "拍摄风格，如：俯拍产品展示、手持vlog、口播、动态展示",\n'
-    '  "mood": "画面传递的情绪，如：兴奋、温馨、平静",\n'
-    '  "text_overlays": ["画面中出现的文字/字幕，按出现顺序"],\n'
-    '  "scene_cut_points": [片段内部明显的转场时间点（秒），如 [1.2, 3.5]],\n'
-    '  "suitable_roles": ["从 hook/setup/demo/proof/closing 中选"],\n'
-    '  "quality_score": 画面质量评分1-10\n'
+    '  "visual_energy": "high/medium/low",\n'
+    '  "opening_frame": "short description of the first frame",\n'
+    '  "closing_frame": "short description of the last frame",\n'
+    '  "visual_style": "shooting style, e.g. talking head, product close-up, handheld vlog",\n'
+    '  "mood": "visual emotion, e.g. warm, energetic, calm",\n'
+    '  "shot_type": "talking_head/product_closeup/usage_scene/interview/environment/other",\n'
+    '  "main_subject": "main visible subject, e.g. person, product, hands, street scene",\n'
+    '  "action": "main action in the clip",\n'
+    '  "product_presence": "none/partial/clear/unknown",\n'
+    '  "scene_context": "where this appears to happen",\n'
+    '  "camera_motion": "static/handheld/push_in/pan/quick_cuts/other",\n'
+    '  "transition_in": "what kind of previous clip this naturally follows",\n'
+    '  "transition_out": "what kind of next clip this naturally leads into",\n'
+    '  "visual_continuity_notes": "brief notes for matching this clip with adjacent clips",\n'
+    '  "text_overlays": ["visible on-screen text in order"],\n'
+    '  "scene_cut_points": [internal visual transition times in seconds, e.g. [1.2, 3.5]],\n'
+    '  "suitable_roles": ["choose from hook/setup/demo/proof/closing"],\n'
+    '  "role_fit_scores": {"hook": 1-10, "setup": 1-10, "demo": 1-10, "proof": 1-10, "closing": 1-10},\n'
+    '  "quality_score": 1-10\n'
     "}\n"
 )
 
-
-# ── ffmpeg clip extraction ──────────────────────────────────────────────
 
 def extract_segment_clip(
     src_video: str,
@@ -248,6 +280,17 @@ def _normalize_visual(raw: dict) -> dict:
     result["closing_frame"] = str(raw.get("closing_frame", "")).strip()[:50]
     result["visual_style"] = str(raw.get("visual_style", "")).strip()[:50]
     result["mood"] = str(raw.get("mood", "")).strip()[:30]
+    result["shot_type"] = str(raw.get("shot_type", "")).strip()[:40]
+    result["main_subject"] = str(raw.get("main_subject", "")).strip()[:50]
+    result["action"] = str(raw.get("action", "")).strip()[:80]
+    product_presence = str(raw.get("product_presence", "")).strip().lower()
+    if product_presence in {"none", "partial", "clear", "unknown"}:
+        result["product_presence"] = product_presence
+    result["scene_context"] = str(raw.get("scene_context", "")).strip()[:60]
+    result["camera_motion"] = str(raw.get("camera_motion", "")).strip()[:40]
+    result["transition_in"] = str(raw.get("transition_in", "")).strip()[:100]
+    result["transition_out"] = str(raw.get("transition_out", "")).strip()[:100]
+    result["visual_continuity_notes"] = str(raw.get("visual_continuity_notes", "")).strip()[:120]
 
     overlays = raw.get("text_overlays", [])
     if isinstance(overlays, list):
@@ -263,6 +306,18 @@ def _normalize_visual(raw: dict) -> dict:
     roles = raw.get("suitable_roles", [])
     if isinstance(roles, list):
         result["suitable_roles"] = [r for r in roles if r in valid_roles] or ["demo"]
+
+    role_scores = raw.get("role_fit_scores", {})
+    if isinstance(role_scores, dict):
+        normalized_scores: dict[str, int] = {}
+        for role in valid_roles:
+            if role not in role_scores:
+                continue
+            try:
+                normalized_scores[role] = max(1, min(10, int(role_scores.get(role))))
+            except (ValueError, TypeError):
+                continue
+        result["role_fit_scores"] = normalized_scores
 
     try:
         result["quality_score"] = max(1, min(10, int(raw.get("quality_score", 5))))
@@ -478,6 +533,11 @@ def fuse_multimodal_summary(segments: list[dict]) -> list[dict]:
         style = str(visual.get("visual_style", "")).strip()
         mood = str(visual.get("mood", "")).strip()
         energy = str(visual.get("visual_energy", "")).strip()
+        shot_type = str(visual.get("shot_type", "")).strip()
+        subject = str(visual.get("main_subject", "")).strip()
+        action = str(visual.get("action", "")).strip()
+        product_presence = str(visual.get("product_presence", "")).strip()
+        transition_out = str(visual.get("transition_out", "")).strip()
         overlays = visual.get("text_overlays", [])
 
         if opening:
@@ -488,6 +548,16 @@ def fuse_multimodal_summary(segments: list[dict]) -> list[dict]:
             parts.append(f"能量感：{energy}")
         if mood:
             parts.append(f"情绪：{mood}")
+        if shot_type:
+            parts.append(f"shot_type:{shot_type}")
+        if subject:
+            parts.append(f"main_subject:{subject}")
+        if action:
+            parts.append(f"action:{action}")
+        if product_presence and product_presence != "unknown":
+            parts.append(f"product_presence:{product_presence}")
+        if transition_out:
+            parts.append(f"transition_out:{transition_out}")
         if overlays:
             parts.append(f"画面文字：{'、'.join(overlays)}")
         if transcript:

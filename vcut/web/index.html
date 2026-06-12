@@ -430,6 +430,21 @@
         <textarea class="form-input" id="goal-input" rows="3" placeholder="描述剪辑目标，例如：突出产品卖点的15秒短视频，台词衔接自然"></textarea>
       </div>
 
+      <div class="form-group">
+        <label>LLM Review 标准</label>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <select class="form-input" id="review-criteria-select" style="flex:1;" onchange="applyReviewCriteria()">
+            <option value="">默认 Review 标准</option>
+          </select>
+          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="resetReviewCriteria()">恢复默认</button>
+          <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" type="button" onclick="saveCurrentReviewCriteria()">保存为预设</button>
+          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="updateCurrentReviewCriteria()">更新预设</button>
+          <button class="btn-sm" style="background:#3a1f1f;color:#ff8a8a;" type="button" onclick="deleteCurrentReviewCriteria()">删除预设</button>
+        </div>
+        <textarea class="form-input" id="review-criteria-input" rows="7" placeholder="只填写审核标准条目，例如：1. 相邻片段在台词、情绪和画面上都应该自然衔接。"></textarea>
+        <div id="review-criteria-status" style="color:#888; font-size:12px; margin-top:6px;"></div>
+      </div>
+
       <div class="form-group" style="display:flex; align-items:center; gap:10px;">
         <label class="toggle-switch">
           <input type="checkbox" id="unique-src-toggle">
@@ -546,6 +561,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     });
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || '登录失败'); }
     showApp();
+    loadReviewCriteria();
     loadBrands();
   } catch (e) {
     errEl.textContent = e.message; errEl.style.display = 'block';
@@ -577,7 +593,7 @@ window.fetch = async function(...args) {
   try {
     const resp = await _origFetch('/api/auth/status');
     const data = await resp.json();
-    if (data.logged_in) { showApp(); loadBrands(); }
+    if (data.logged_in) { showApp(); loadReviewCriteria(); loadBrands(); }
     else { showLogin(); }
   } catch { showLogin(); }
 })();
@@ -595,7 +611,7 @@ function switchTab(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   if (page === 'manage') { loadStorage(); loadManageBrands(); }
   else if (page === 'output') { loadStorage(); loadOutputBrandSelect(); }
-  else { loadBrands(); if (selectedBrand) loadPrompts(selectedBrand); }
+  else { loadReviewCriteria(); loadBrands(); if (selectedBrand) loadPrompts(selectedBrand); }
 }
 
 // ==================== EDIT PAGE ====================
@@ -682,6 +698,8 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1 };
   const goal = document.getElementById('goal-input').value.trim();
   if (goal) body.goal = goal;
+  const reviewCriteria = document.getElementById('review-criteria-input').value.trim();
+  if (reviewCriteria) body.review_criteria = reviewCriteria;
   body.unique_src_video = document.getElementById('unique-src-toggle').checked;
   body.use_understanding = document.querySelector('.mode-option.active')?.dataset.value === 'asr+visual';
   try {
@@ -770,6 +788,7 @@ function resetUI() {
   document.getElementById('variants-input').value = '1';
   document.getElementById('goal-input').value = '';
   document.getElementById('prompt-select').innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+  loadReviewCriteria();
   document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
   document.querySelector('.mode-option[data-value="asr"]').classList.add('active');
   // Reset progress bar and stage tags
@@ -1119,6 +1138,8 @@ async function loadStorage() {
 
 // ==================== PROMPTS ====================
 let brandPrompts = [];
+let brandReviewCriteria = [];
+let defaultReviewCriteria = '';
 
 async function loadPrompts(brand) {
   try {
@@ -1137,6 +1158,102 @@ function applyPrompt() {
   if (!pid) return;
   const p = brandPrompts.find(x => x.id === pid);
   if (p) document.getElementById('goal-input').value = p.content;
+}
+
+async function loadReviewCriteria() {
+  const status = document.getElementById('review-criteria-status');
+  if (status) status.textContent = '正在加载默认 Review 标准...';
+  try {
+    const resp = await fetch('/api/review/criteria');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
+    brandReviewCriteria = await resp.json();
+    const sel = document.getElementById('review-criteria-select');
+    sel.innerHTML = '';
+    brandReviewCriteria.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.name;
+      sel.appendChild(opt);
+    });
+    const defaultItem = brandReviewCriteria.find(item => item.id === '__default__') || brandReviewCriteria[0];
+    defaultReviewCriteria = defaultItem ? defaultItem.content : '';
+    if (defaultItem) {
+      sel.value = defaultItem.id;
+      document.getElementById('review-criteria-input').value = defaultItem.content;
+    }
+    if (status) status.textContent = `已加载 ${brandReviewCriteria.length} 个 Review 标准`;
+  } catch (e) {
+    console.error('loadReviewCriteria failed', e);
+    if (status) status.textContent = 'Review 标准加载失败：' + e.message;
+  }
+}
+
+function applyReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (item) document.getElementById('review-criteria-input').value = item.content;
+}
+
+function resetReviewCriteria() {
+  const sel = document.getElementById('review-criteria-select');
+  sel.value = '__default__';
+  document.getElementById('review-criteria-input').value = defaultReviewCriteria;
+}
+
+async function saveCurrentReviewCriteria() {
+  const content = document.getElementById('review-criteria-input').value.trim();
+  if (!content) { alert('Review 标准不能为空'); return; }
+  const name = prompt('请输入 Review 标准名称，例如：高连贯性广告审核');
+  if (!name || !name.trim()) return;
+  try {
+    const resp = await fetch('/api/review/criteria', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name.trim(), content }),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '保存失败'); }
+    const saved = await resp.json();
+    await loadReviewCriteria();
+    document.getElementById('review-criteria-select').value = saved.id;
+    applyReviewCriteria();
+  } catch (e) { alert('保存 Review 标准失败: ' + e.message); }
+}
+
+async function updateCurrentReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (!item || item.readonly || pid === '__default__') {
+    alert('默认 Review 标准不能更新，请先保存为新的预设');
+    return;
+  }
+  const content = document.getElementById('review-criteria-input').value.trim();
+  if (!content) { alert('Review 标准不能为空'); return; }
+  try {
+    const resp = await fetch(`/api/review/criteria/${pid}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: item.name, content }),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '更新失败'); }
+    await loadReviewCriteria();
+    document.getElementById('review-criteria-select').value = pid;
+    applyReviewCriteria();
+  } catch (e) { alert('更新 Review 标准失败: ' + e.message); }
+}
+
+async function deleteCurrentReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (!item || item.readonly || pid === '__default__') {
+    alert('默认 Review 标准不能删除');
+    return;
+  }
+  if (!confirm(`确定删除 Review 标准「${item.name}」吗？`)) return;
+  try {
+    const resp = await fetch(`/api/review/criteria/${pid}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
+    await loadReviewCriteria();
+  } catch (e) { alert('删除 Review 标准失败: ' + e.message); }
 }
 
 // ==================== OUTPUT PAGE ====================

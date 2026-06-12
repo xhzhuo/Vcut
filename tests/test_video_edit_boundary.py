@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from vcut.stages.video_edit import get_video_info, normalize_clips
+from vcut.stages.video_edit import cut_clip, get_video_info, normalize_clips
 
 
 class TestGetVideoInfo:
@@ -142,3 +142,57 @@ class TestNormalizeClips:
         monkeypatch.setattr("vcut.stages.video_edit.get_video_info", fake_get_video_info)
         result = normalize_clips([clip1, clip2], "ffmpeg", {})
         assert result == [clip1, clip2]
+
+    def test_audio_normalize_uses_async_pts_options(self, tmp_path, monkeypatch):
+        clip1 = tmp_path / "clip1.mp4"
+        clip2 = tmp_path / "clip2.mp4"
+        clip1.write_bytes(b"x")
+        clip2.write_bytes(b"x")
+        commands: list[list[str]] = []
+
+        def fake_get_video_info(path):
+            return {
+                "has_video": True,
+                "has_audio": True,
+                "width": 1920,
+                "height": 1080,
+                "fps": 30.0,
+                "audio_sample_rate": 48000 if path == clip2 else 44100,
+                "audio_channels": 2,
+            }
+
+        def fake_run_ffmpeg(command):
+            commands.append(command)
+            Path(command[-1]).write_bytes(b"out")
+
+        monkeypatch.setattr("vcut.stages.video_edit.get_video_info", fake_get_video_info)
+        monkeypatch.setattr("vcut.stages.video_edit._run_ffmpeg", fake_run_ffmpeg)
+
+        normalize_clips([clip1, clip2], "ffmpeg", {"target_audio_sample_rate": 44100})
+
+        assert any("aresample=44100:async=1:first_pts=0" in part for cmd in commands for part in cmd)
+
+
+def test_cut_clip_accepts_fractional_target_fps(tmp_path, monkeypatch):
+    src = tmp_path / "src.mp4"
+    out = tmp_path / "out.mp4"
+    src.write_bytes(b"x")
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_ffmpeg(command):
+        captured["command"] = command
+        out.write_bytes(b"out")
+
+    monkeypatch.setattr("vcut.stages.video_edit._run_ffmpeg", fake_run_ffmpeg)
+
+    cut_clip(
+        src_video=str(src),
+        start=0.0,
+        end=1.0,
+        output_path=out,
+        ffmpeg_cmd="ffmpeg",
+        render_config={"target_fps": "29.97"},
+    )
+
+    vf = captured["command"][captured["command"].index("-vf") + 1]
+    assert "fps=29.97" in vf

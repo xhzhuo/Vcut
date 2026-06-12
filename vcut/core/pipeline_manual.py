@@ -72,6 +72,24 @@ def _append_signature_history(path: Path, signatures: list[str]) -> None:
             fh.write(signature + "\n")
 
 
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _review_log_by_signature(review_log: list[dict]) -> dict[str, dict]:
+    by_signature: dict[str, dict] = {}
+    for record in review_log:
+        plan = record.get("edit_plan")
+        if isinstance(plan, list):
+            by_signature[_plan_signature(plan)] = record
+    return by_signature
+
+
 def run_manual_pipeline(
     *,
     config: dict,
@@ -137,6 +155,15 @@ def run_manual_pipeline(
     llm_model_name = str(strategy_config.get("model_name", DEFAULT_MODEL_NAMES["strategy"])).strip() or None
     llm_api_key_env = str(strategy_config.get("api_key_env", "OPENAI_API_KEY")).strip() or None
     llm_endpoint = str(strategy_config.get("endpoint", "")).strip() or None
+    quality_config = dict(strategy_config.get("quality", {}))
+    review_config = dict(strategy_config.get("review", {}))
+
+    if not manual_use_asr_llm:
+        raise RuntimeError(
+            "Manual pipeline requires LLM selection. Deterministic non-LLM selection is disabled "
+            "because it can generate low-quality fallback plans instead of real content selection. "
+            "Run with --manual-use-asr-llm."
+        )
 
     signature_history_path = artifacts_dir / "used_plan_signatures.txt"
     existing_signatures = _load_signature_history(signature_history_path)
@@ -146,6 +173,7 @@ def run_manual_pipeline(
     removed_logs: list[str] = []
     batch_seen: set[str] = set()
     all_generated_plans: list[list[dict]] = []  # track all plans for prior_plans passing
+    review_log: list[dict] = []
 
     def _dedup_plans(candidates: list[list[dict]], batch_num: int) -> None:
         nonlocal removed_logs
@@ -175,6 +203,9 @@ def run_manual_pipeline(
         llm_api_key_env=llm_api_key_env,
         llm_endpoint=llm_endpoint,
         used_combinations=used_combinations,
+        quality_config=quality_config,
+        review_config=review_config,
+        review_log=review_log,
     )
     all_generated_plans.extend(plans)
     _dedup_plans(plans, batch_num=1)
@@ -203,6 +234,9 @@ def run_manual_pipeline(
             variant_offset=len(all_generated_plans),
             prior_plans=kept_plans,
             used_combinations=used_combinations,
+            quality_config=quality_config,
+            review_config=review_config,
+            review_log=review_log,
         )
         all_generated_plans.extend(extra_plans)
         _dedup_plans(extra_plans, batch_num=retry + 2)
@@ -212,22 +246,34 @@ def run_manual_pipeline(
     if removed_logs:
         logger.info("[manual-dedupe] removed_total=%d", len(removed_logs))
 
+    rejected_reviews = [record for record in review_log if record.get("status") == "rejected"]
+    _write_jsonl(artifacts_dir / "rejected_plans.jsonl", rejected_reviews)
+
     if len(kept_plans) < manual_variants:
-        logger.warning(
-            "[manual-dedupe] only %d/%d plans after %d retries, proceeding with available plans",
-            len(kept_plans), manual_variants, max_retries,
+        raise RuntimeError(
+            f"Only generated {len(kept_plans)}/{manual_variants} unique plans after {max_retries} retries. "
+            "Please add more qualified labeled segments, improve transcript/visual understanding coverage, "
+            "or refine the label sequence and product keywords so the strict quality gate can be satisfied."
         )
 
     plans = kept_plans
-    _append_signature_history(signature_history_path, kept_signatures)
+    reviews_by_signature = _review_log_by_signature(review_log)
 
     render_config = dict(config.get("render", {}))
     for idx, plan in enumerate(plans):
+        signature = kept_signatures[idx] if idx < len(kept_signatures) else _plan_signature(plan)
         # Match plan naming to output video naming convention
         output_for_variant = variant_output_path(output_video, idx + 1)
         video_stem = Path(output_for_variant).stem
         plan_path = artifacts_dir / f"edit_plan_{video_stem}.json"
         write_edit_plan_json(plan, plan_path)
+        review_record = reviews_by_signature.get(signature)
+        if review_record:
+            review_path = artifacts_dir / f"review_{video_stem}.json"
+            review_path.write_text(
+                json.dumps(review_record, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         if bool(render_config.get("enabled", True)):
             render_result = render_video_fn(
                 edit_plan=plan,
@@ -237,4 +283,6 @@ def run_manual_pipeline(
             adjusted_plan = render_result.get("adjusted_edit_plan")
             if isinstance(adjusted_plan, list) and adjusted_plan:
                 write_edit_plan_json(adjusted_plan, plan_path)
+            _append_signature_history(signature_history_path, [signature])
+            existing_signatures.add(signature)
 

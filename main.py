@@ -76,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require each label to come from a different source video.",
     )
     parser.add_argument(
+        "--manual-review-criteria",
+        default=None,
+        help="Optional custom LLM review criteria for manual edit-plan approval.",
+    )
+    parser.add_argument(
         "--group-name",
         default=None,
         help="Explicit group/brand name for artifacts directory. Overrides auto-inference.",
@@ -105,6 +110,7 @@ def main() -> None:
         manual_use_understanding=args.manual_use_understanding,
         manual_goal=args.manual_goal,
         manual_unique_src_video=args.manual_unique_src_video,
+        manual_review_criteria=args.manual_review_criteria,
         group_name=args.group_name,
     )
 

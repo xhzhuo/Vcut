@@ -26,10 +26,14 @@ def run_pipeline(
     manual_use_understanding: bool = False,
     manual_goal: str | None = None,
     manual_unique_src_video: bool = False,
+    manual_review_criteria: str | None = None,
     group_name: str | None = None,
 ) -> None:
     """Run pipeline in manual mode and write outputs/artifacts."""
     config = load_config(config_path)
+    if manual_review_criteria and manual_review_criteria.strip():
+        review_config = config.setdefault("strategy", {}).setdefault("review", {})
+        review_config["criteria"] = manual_review_criteria.strip()
     base_artifacts_dir = Path(config["artifacts_dir"]).resolve(strict=False)
 
     if not manual_xlsx:
