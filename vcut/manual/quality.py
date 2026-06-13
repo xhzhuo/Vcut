@@ -47,17 +47,6 @@ def validate_manual_selection(
     if len(selected) != len(labels):
         issues.append(f"selection length mismatch: got {len(selected)}, expected {len(labels)}")
 
-    src_videos = [
-        str(segment.get("src_video", "")).strip()
-        for segment in selected
-        if str(segment.get("src_video", "")).strip()
-    ]
-    if len(src_videos) > 1 and len(set(src_videos)) == 1:
-        issues.append(
-            "all selected labels come from the same src_video; "
-            "choose at least two different source videos"
-        )
-
     if unique_src_video:
         seen_src: dict[str, int] = {}
         for segment in selected:

@@ -99,6 +99,60 @@ def test_detect_progress_tracks_multiple_variant_outputs(monkeypatch, tmp_path) 
     assert task.status == "done"
     assert task.stage == "complete"
     assert task.progress == 100
+    outputs = web_app._task_outputs(task)
+    assert [item["index"] for item in outputs] == [1, 2]
+    assert outputs[0]["url"] == "/api/tasks/newtask/download/1"
+    assert outputs[1]["url"] == "/api/tasks/newtask/download/2"
+
+
+def test_find_edit_plan_does_not_fallback_to_latest_unrelated_plan(monkeypatch, tmp_path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    brand_dir = artifacts_dir / "brand_a"
+    brand_dir.mkdir(parents=True)
+    (brand_dir / "edit_plan_other.json").write_text('[{"segment_id":"wrong"}]', encoding="utf-8")
+
+    monkeypatch.setattr(web_app, "ARTIFACTS_DIR", artifacts_dir)
+
+    assert web_app._find_edit_plan_for_video("brand_a", "renamed.mp4") is None
+
+
+def test_rename_output_renames_matching_edit_plan(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "output"
+    artifacts_dir = tmp_path / "artifacts"
+    brand_output = output_dir / "brand_a"
+    brand_artifacts = artifacts_dir / "brand_a"
+    brand_output.mkdir(parents=True)
+    brand_artifacts.mkdir(parents=True)
+    (brand_output / "old.mp4").write_bytes(b"video")
+    (brand_artifacts / "edit_plan_old.json").write_text("[]", encoding="utf-8")
+
+    monkeypatch.setattr(web_app, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(web_app, "ARTIFACTS_DIR", artifacts_dir)
+
+    result = asyncio.run(
+        web_app.rename_output(
+            "brand_a",
+            "old.mp4",
+            {"name": "new.mp4"},
+            current_user="test",
+        )
+    )
+
+    assert result == {"ok": True, "new_name": "new.mp4"}
+    assert (brand_output / "new.mp4").exists()
+    assert not (brand_output / "old.mp4").exists()
+    assert (brand_artifacts / "edit_plan_new.json").exists()
+    assert not (brand_artifacts / "edit_plan_old.json").exists()
+
+
+def test_upload_xlsx_requires_expected_manual_filename() -> None:
+    try:
+        web_app._validate_upload_filename("plan.xlsx")
+    except web_app.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "切片方案.xlsx" in exc.detail
+    else:
+        raise AssertionError("expected HTTPException")
 
 
 def test_cleanup_brand_artifacts_preserves_audit_records(monkeypatch, tmp_path) -> None:

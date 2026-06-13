@@ -5,11 +5,18 @@ from __future__ import annotations
 import pytest
 
 from vcut.manual.understanding import (
+    VISUAL_PROMPT,
     _parse_visual_json,
     _normalize_visual,
     _extract_content_text,
     _is_valid_time,
 )
+
+
+def test_visual_prompt_is_external_chinese_prompt():
+    assert "专业短视频剪辑师" in VISUAL_PROMPT
+    assert "只返回严格 JSON" in VISUAL_PROMPT
+    assert "visual_energy" in VISUAL_PROMPT
 
 
 class TestParseVisualJson:

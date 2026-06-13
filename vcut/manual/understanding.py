@@ -22,6 +22,7 @@ from vcut.core.config import DEFAULT_MODEL_NAMES
 from vcut.io.ffmpeg_utils import resolve_ffmpeg_command
 from vcut.io.fingerprint import canonical_path, get_source_fingerprint, hash_config_block
 from vcut.io.retry import retry_call
+from vcut.manual.prompt_loader import load_manual_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -77,32 +78,7 @@ def _default_visual_fields() -> dict[str, Any]:
 
 # ── ffmpeg clip extraction ──────────────────────────────────────────────
 
-VISUAL_PROMPT = (
-    "You are a professional short-form video editor. Analyze this clip for edit selection context, "
-    "not for filtering or rejecting the clip. Return strict JSON only, no markdown.\n"
-    "Use descriptive fields only. Do not use downrank, reject, bad, or risk labels.\n"
-    "{\n"
-    '  "visual_energy": "high/medium/low",\n'
-    '  "opening_frame": "short description of the first frame",\n'
-    '  "closing_frame": "short description of the last frame",\n'
-    '  "visual_style": "shooting style, e.g. talking head, product close-up, handheld vlog",\n'
-    '  "mood": "visual emotion, e.g. warm, energetic, calm",\n'
-    '  "shot_type": "talking_head/product_closeup/usage_scene/interview/environment/other",\n'
-    '  "main_subject": "main visible subject, e.g. person, product, hands, street scene",\n'
-    '  "action": "main action in the clip",\n'
-    '  "product_presence": "none/partial/clear/unknown",\n'
-    '  "scene_context": "where this appears to happen",\n'
-    '  "camera_motion": "static/handheld/push_in/pan/quick_cuts/other",\n'
-    '  "transition_in": "what kind of previous clip this naturally follows",\n'
-    '  "transition_out": "what kind of next clip this naturally leads into",\n'
-    '  "visual_continuity_notes": "brief notes for matching this clip with adjacent clips",\n'
-    '  "text_overlays": ["visible on-screen text in order"],\n'
-    '  "scene_cut_points": [internal visual transition times in seconds, e.g. [1.2, 3.5]],\n'
-    '  "suitable_roles": ["choose from hook/setup/demo/proof/closing"],\n'
-    '  "role_fit_scores": {"hook": 1-10, "setup": 1-10, "demo": 1-10, "proof": 1-10, "closing": 1-10},\n'
-    '  "quality_score": 1-10\n'
-    "}\n"
-)
+VISUAL_PROMPT = load_manual_prompt("visual_segment.zh.md")
 
 
 def extract_segment_clip(

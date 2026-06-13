@@ -12,6 +12,29 @@ from vcut.manual.visual_payload import build_visual_payload
 from vcut.stages.strategy import _call_openai_chat, _parse_json_robust
 
 
+BRIDGE_REVIEW_FIELDS = (
+    "theme_bridge",
+    "brand_bridge",
+    "speech_bridge",
+    "visual_jump_acceptability",
+)
+
+
+def _fallback_structured_goal(goal: str | None) -> dict:
+    raw = str(goal or "").strip()
+    return {
+        "objective": raw or "选择一组台词与画面衔接最连贯的短视频片段。",
+        "target_duration_seconds": None,
+        "audience": "",
+        "tone": "",
+        "narrative_arc": ["hook", "setup", "demo", "proof", "closing"],
+        "must_include": [],
+        "avoid": ["台词重复", "广告感突兀", "跳到 CTA 太快"],
+        "cta_style": "自然收束",
+        "raw_goal": raw,
+    }
+
+
 def _segment_summary(segment: dict) -> dict:
     visual = segment.get("visual_description", {})
     summary = {
@@ -64,16 +87,51 @@ def _normalize_review(parsed: Any, *, min_score: float) -> dict:
     pair_reviews = parsed.get("adjacent_pair_reviews", [])
     if not isinstance(pair_reviews, list):
         pair_reviews = []
+    normalized_pair_reviews = []
+    for item in pair_reviews:
+        if not isinstance(item, dict):
+            continue
+        normalized_item = dict(item)
+        for field in BRIDGE_REVIEW_FIELDS:
+            normalized_item[field] = str(normalized_item.get(field, "")).strip()
+        normalized_pair_reviews.append(normalized_item)
+    fail_pairs = []
+    if not retry_feedback:
+        instructions = []
+        for item in normalized_pair_reviews:
+            verdict = str(item.get("verdict", "")).strip().lower()
+            instruction = str(item.get("instruction", "")).strip()
+            if verdict == "fail":
+                fail_pairs.append(
+                    f"{item.get('from_segment_id', '')}->{item.get('to_segment_id', '')}"
+                )
+            if verdict in {"weak", "fail"} and instruction:
+                instructions.append(instruction)
+        if instructions:
+            retry_feedback = "；".join(instructions[:3])
+    else:
+        for item in normalized_pair_reviews:
+            if str(item.get("verdict", "")).strip().lower() == "fail":
+                fail_pairs.append(
+                    f"{item.get('from_segment_id', '')}->{item.get('to_segment_id', '')}"
+                )
+    normalized_issues = list(issues)
+    if fail_pairs:
+        fail_detail = ", ".join(pair for pair in fail_pairs if pair.strip("->")) or "unknown pair"
+        normalized_issues.append(
+            "adjacent pair verdict fail: "
+            + fail_detail
+        )
     result = {
-        "approved": approved and score >= min_score,
+        "approved": approved and score >= min_score and not fail_pairs,
         "score": score,
-        "issues": issues,
-        "adjacent_pair_reviews": pair_reviews,
+        "issues": normalized_issues,
+        "adjacent_pair_reviews": normalized_pair_reviews,
         "retry_feedback": retry_feedback,
         "raw": parsed,
     }
     if approved_value is not True and approved_value is not False:
-        result["issues"] = issues + ["review approved field must be a boolean true or false"]
+        result["issues"] = normalized_issues + ["review approved field must be a boolean true or false"]
     if approved and score < min_score:
         result["issues"] = result["issues"] + [f"review score {score:.1f} is below minimum {min_score:.1f}"]
     return result
@@ -89,6 +147,7 @@ def review_manual_edit_plan(
     llm_model_name: str | None,
     llm_api_key_env: str | None,
     llm_endpoint: str | None,
+    structured_goal: dict | None = None,
 ) -> dict:
     """Ask an LLM reviewer to approve or reject a candidate edit plan."""
     config = dict(review_config or {})
@@ -118,21 +177,14 @@ def review_manual_edit_plan(
 
     selected_summaries = [_segment_summary(segment) for segment in selected]
     payload = {
-        "goal": str(goal or "").strip() or "Produce a coherent short video edit.",
+        "structured_goal": structured_goal or _fallback_structured_goal(goal),
         "labels_in_order": labels,
         "selected_segments": selected_summaries,
         "adjacent_pairs": _adjacent_pairs(selected_summaries),
         "edit_plan": edit_plan,
         "pass_threshold": min_score,
     }
-    system_content = (
-        f"{build_review_system_prompt(review_criteria)}\n\n"
-        "输出 JSON 格式：\n"
-        '{"approved": true|false, "score": 0-100, "issues": ["..."], '
-        '"adjacent_pair_reviews": [{"from_segment_id": "...", "to_segment_id": "...", "comment": "..."}], '
-        '"retry_feedback": "..."}\n'
-        "如果拒绝，retry_feedback 必须是一条简洁、可执行、可直接反馈给 selector 下一轮使用的中文指令。"
-    )
+    system_content = build_review_system_prompt(review_criteria)
     messages = [
         {"role": "system", "content": system_content},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},

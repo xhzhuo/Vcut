@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -38,6 +39,50 @@ AUTH_ENABLED = bool(AUTH_USER)
 
 _secret_key = os.getenv("VCUT_SECRET_KEY", "").strip() or secrets.token_hex(32)
 app.add_middleware(SessionMiddleware, secret_key=_secret_key, max_age=86400)
+
+_SAFE_NAME_RE = re.compile(r"^[^<>:\"/\\|?*\x00-\x1f]+$")
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+_UPLOAD_EXTENSIONS = _VIDEO_EXTENSIONS | {".xlsx"}
+
+
+def _validate_child_name(value: str, *, field: str) -> str:
+    name = str(value or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail=f"{field} 不能为空")
+    if name in {".", ".."} or Path(name).name != name or not _SAFE_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail=f"{field} 含有不支持的字符")
+    return name
+
+
+def _validate_brand_name(value: str) -> str:
+    return _validate_child_name(value, field="品牌名称")
+
+
+def _validate_filename(value: str) -> str:
+    return _validate_child_name(value, field="文件名")
+
+
+def _validate_upload_filename(value: str) -> str:
+    filename = _validate_filename(value)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _UPLOAD_EXTENSIONS:
+        allowed = ", ".join(sorted(_UPLOAD_EXTENSIONS))
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型，仅支持 {allowed}")
+    if suffix == ".xlsx" and filename != "切片方案.xlsx":
+        raise HTTPException(status_code=400, detail="切片方案文件必须命名为 切片方案.xlsx")
+    return filename
+
+
+def _brand_dir(brand: str) -> Path:
+    return INPUTS_DIR / _validate_brand_name(brand)
+
+
+def _artifacts_brand_dir(brand: str) -> Path:
+    return ARTIFACTS_DIR / _validate_brand_name(brand)
+
+
+def _output_brand_dir(brand: str) -> Path:
+    return OUTPUT_DIR / _validate_brand_name(brand)
 
 
 def get_current_user(request: Request) -> str:
@@ -177,13 +222,37 @@ def _find_output_video(task: Task) -> str | None:
     return None
 
 
+def _task_output_path(task: Task, index: int) -> Path | None:
+    if not task.output_file:
+        return None
+    return Path(variant_output_path(task.output_file, index))
+
+
+def _task_outputs(task: Task) -> list[dict[str, Any]]:
+    outputs: list[dict[str, Any]] = []
+    count = max(1, int(task.variants or 1))
+    for index in range(1, count + 1):
+        path = _task_output_path(task, index)
+        if not path or not path.exists():
+            continue
+        outputs.append(
+            {
+                "index": index,
+                "name": path.name,
+                "size_mb": round(path.stat().st_size / 1024 / 1024, 1),
+                "url": f"/api/tasks/{task.id}/download/{index}",
+            }
+        )
+    return outputs
+
+
 def _cleanup_brand_artifacts(brand: str) -> None:
     """Keep historical edit artifacts intact.
 
     Progress detection is task-scoped by timestamp and task id, so old edit
     plans/reviews remain available as audit records for generated videos.
     """
-    brand_dir = ARTIFACTS_DIR / brand
+    brand_dir = _artifacts_brand_dir(brand)
     if not brand_dir.exists():
         return
     logger.info("Preserving historical artifacts for brand: %s", brand)
@@ -330,7 +399,7 @@ async def list_brands(current_user: str = Depends(get_current_user)):
 
 @app.get("/api/brands/{brand}/xlsx")
 async def read_brand_xlsx(brand: str, current_user: str = Depends(get_current_user)):
-    xlsx_path = INPUTS_DIR / brand / "切片方案.xlsx"
+    xlsx_path = _brand_dir(brand) / "切片方案.xlsx"
     if not xlsx_path.exists():
         raise HTTPException(status_code=404, detail=f"品牌 '{brand}' 无切片方案.xlsx")
 
@@ -369,9 +438,7 @@ async def read_brand_xlsx(brand: str, current_user: str = Depends(get_current_us
 # ---------------------------------------------------------------------------
 @app.post("/api/brands")
 async def create_brand(body: dict, current_user: str = Depends(get_current_user)):
-    name = body.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="缺少品牌名称")
+    name = _validate_brand_name(body.get("name", ""))
     brand_dir = INPUTS_DIR / name
     if brand_dir.exists():
         raise HTTPException(status_code=409, detail=f"品牌 '{name}' 已存在")
@@ -381,17 +448,16 @@ async def create_brand(body: dict, current_user: str = Depends(get_current_user)
 
 @app.delete("/api/brands/{brand}")
 async def delete_brand(brand: str, current_user: str = Depends(get_current_user)):
-    brand_dir = INPUTS_DIR / brand
+    brand_dir = _brand_dir(brand)
     if not brand_dir.exists():
         raise HTTPException(status_code=404, detail="品牌不存在")
-    import shutil
     shutil.rmtree(brand_dir)
     return {"ok": True}
 
 
 @app.get("/api/brands/{brand}/files")
 async def list_brand_files(brand: str, current_user: str = Depends(get_current_user)):
-    brand_dir = INPUTS_DIR / brand
+    brand_dir = _brand_dir(brand)
     if not brand_dir.exists():
         raise HTTPException(status_code=404, detail="品牌不存在")
     files = []
@@ -407,18 +473,21 @@ async def list_brand_files(brand: str, current_user: str = Depends(get_current_u
 
 @app.post("/api/brands/{brand}/files")
 async def upload_brand_file(brand: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
-    brand_dir = INPUTS_DIR / brand
+    brand_dir = _brand_dir(brand)
     brand_dir.mkdir(parents=True, exist_ok=True)
-    dest = brand_dir / file.filename
+    filename = _validate_upload_filename(file.filename or "")
+    dest = brand_dir / filename
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"文件 '{filename}' 已存在，请先删除旧文件")
     content = await file.read()
     dest.write_bytes(content)
-    logger.info("Uploaded %s to %s (%d bytes)", file.filename, brand_dir, len(content))
-    return {"name": file.filename, "size_mb": round(len(content) / 1024 / 1024, 1)}
+    logger.info("Uploaded %s to %s (%d bytes)", filename, brand_dir, len(content))
+    return {"name": filename, "size_mb": round(len(content) / 1024 / 1024, 1)}
 
 
 @app.delete("/api/brands/{brand}/files/{filename}")
 async def delete_brand_file(brand: str, filename: str, current_user: str = Depends(get_current_user)):
-    file_path = INPUTS_DIR / brand / filename
+    file_path = _brand_dir(brand) / _validate_filename(filename)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
     file_path.unlink()
@@ -430,17 +499,21 @@ async def delete_brand_file(brand: str, filename: str, current_user: str = Depen
 # ---------------------------------------------------------------------------
 @app.post("/api/tasks")
 async def create_task(body: dict, current_user: str = Depends(get_current_user)):
-    brand = body.get("brand")
-    if not brand:
-        raise HTTPException(status_code=400, detail="缺少 brand 参数")
+    brand = _validate_brand_name(body.get("brand", ""))
 
-    xlsx_path = INPUTS_DIR / brand / "切片方案.xlsx"
+    xlsx_path = _brand_dir(brand) / "切片方案.xlsx"
     if not xlsx_path.exists():
         raise HTTPException(status_code=404, detail=f"品牌 '{brand}' 无切片方案.xlsx")
 
-    labels = body.get("labels", [])
+    labels = [str(label).strip() for label in body.get("labels", []) if str(label).strip()]
     if not labels:
         raise HTTPException(status_code=400, detail="缺少 labels 参数")
+    try:
+        variants = int(body.get("variants", 1))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="生成变体数量必须是数字") from None
+    if variants < 1 or variants > 10:
+        raise HTTPException(status_code=400, detail="生成变体数量必须在 1 到 10 之间")
 
     with _lock:
         # Check if any task is actually running
@@ -457,7 +530,7 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
         brand=brand,
         goal=body.get("goal", ""),
         labels=labels,
-        variants=body.get("variants", 1),
+        variants=variants,
         unique_src_video=body.get("unique_src_video", False),
         use_understanding=body.get("use_understanding", False),
         review_criteria=str(body.get("review_criteria", "")).strip(),
@@ -531,18 +604,26 @@ async def abort_task(task_id: str, current_user: str = Depends(get_current_user)
 
 @app.get("/api/tasks/{task_id}/download")
 async def download_task(task_id: str, current_user: str = Depends(get_current_user)):
+    return await download_task_variant(task_id, 1, current_user=current_user)
+
+
+@app.get("/api/tasks/{task_id}/download/{variant_index}")
+async def download_task_variant(task_id: str, variant_index: int, current_user: str = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     if task.status != "done":
         raise HTTPException(status_code=400, detail="任务未完成")
-    if not task.output_file or not Path(task.output_file).exists():
+    if variant_index < 1 or variant_index > max(1, int(task.variants or 1)):
+        raise HTTPException(status_code=404, detail="变体不存在")
+    output_path = _task_output_path(task, variant_index)
+    if not output_path or not output_path.exists():
         raise HTTPException(status_code=404, detail="输出文件不存在")
 
     return FileResponse(
-        task.output_file,
+        str(output_path),
         media_type="video/mp4",
-        filename=f"vcut_{task.brand}_{task_id}.mp4",
+        filename=f"vcut_{task.brand}_{output_path.name}",
     )
 
 
@@ -553,7 +634,7 @@ def _find_brand_outputs(brand: str) -> list[Path]:
     """Find all output mp4 files for a brand across output and artifacts dirs."""
     seen: set[str] = set()
     results: list[Path] = []
-    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+    for search_dir in [_output_brand_dir(brand), _artifacts_brand_dir(brand)]:
         if not search_dir.exists():
             continue
         for f in sorted(search_dir.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -566,7 +647,7 @@ def _find_brand_outputs(brand: str) -> list[Path]:
 
 def _find_edit_plan_for_video(brand: str, video_name: str) -> dict | None:
     """Find the edit plan associated with a video."""
-    brand_dir = ARTIFACTS_DIR / brand
+    brand_dir = _artifacts_brand_dir(brand)
     if not brand_dir.exists():
         return None
 
@@ -580,17 +661,10 @@ def _find_edit_plan_for_video(brand: str, video_name: str) -> dict | None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    # Fallback: latest edit_plan_*.json (sorted by modification time, newest first)
-    plan_files = sorted(brand_dir.glob("edit_plan_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if plan_files:
-        try:
-            return json.loads(plan_files[0].read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Fallback: single edit_plan.json
+    # Legacy fallback: only use edit_plan.json when no per-video plan exists.
+    # Showing the newest unrelated plan is worse than showing no plan.
     single = brand_dir / "edit_plan.json"
-    if single.exists():
+    if single.exists() and not list(brand_dir.glob("edit_plan_*.json")):
         try:
             return json.loads(single.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -634,6 +708,7 @@ def _enrich_plan_with_labels(plan: list[dict], label_map: dict[str, str]) -> lis
 
 @app.get("/api/brands/{brand}/outputs")
 async def list_brand_outputs(brand: str, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
     outputs = _find_brand_outputs(brand)
     label_map = _load_segment_label_map(brand)
     results = []
@@ -655,6 +730,8 @@ async def list_brand_outputs(brand: str, current_user: str = Depends(get_current
 
 @app.get("/api/brands/{brand}/outputs/{filename}/plan")
 async def get_edit_plan(brand: str, filename: str, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
+    filename = _validate_filename(filename)
     plan = _find_edit_plan_for_video(brand, filename)
     if plan is None:
         raise HTTPException(status_code=404, detail="未找到对应的 edit plan")
@@ -666,7 +743,9 @@ async def get_edit_plan(brand: str, filename: str, current_user: str = Depends(g
 
 @app.post("/api/brands/{brand}/outputs/{filename}/feedback")
 async def save_feedback(brand: str, filename: str, body: dict, current_user: str = Depends(get_current_user)):
-    fb_dir = ARTIFACTS_DIR / brand / "feedback"
+    brand = _validate_brand_name(brand)
+    filename = _validate_filename(filename)
+    fb_dir = _artifacts_brand_dir(brand) / "feedback"
     fb_dir.mkdir(parents=True, exist_ok=True)
     fb_path = fb_dir / f"{Path(filename).stem}.json"
     data = {
@@ -683,25 +762,33 @@ async def save_feedback(brand: str, filename: str, body: dict, current_user: str
 
 @app.put("/api/brands/{brand}/outputs/{filename}")
 async def rename_output(brand: str, filename: str, body: dict, current_user: str = Depends(get_current_user)):
-    new_name = body.get("name", "").strip()
-    if not new_name:
-        raise HTTPException(status_code=400, detail="缺少新文件名")
+    brand = _validate_brand_name(brand)
+    filename = _validate_filename(filename)
+    new_name = _validate_filename(body.get("name", ""))
     if not new_name.endswith(".mp4"):
         new_name += ".mp4"
+    if Path(new_name).suffix.lower() != ".mp4":
+        raise HTTPException(status_code=400, detail="成品文件必须是 .mp4")
 
     # Find the file
-    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+    for search_dir in [_output_brand_dir(brand), _artifacts_brand_dir(brand)]:
         old_path = search_dir / filename
         if old_path.exists():
             new_path = search_dir / new_name
             if new_path.exists():
                 raise HTTPException(status_code=409, detail="目标文件名已存在")
+            plan_old = _artifacts_brand_dir(brand) / f"edit_plan_{Path(filename).stem}.json"
+            plan_new = _artifacts_brand_dir(brand) / f"edit_plan_{Path(new_name).stem}.json"
+            if plan_old.exists() and plan_new.exists():
+                raise HTTPException(status_code=409, detail="目标剪辑方案文件已存在")
             old_path.rename(new_path)
             # Rename feedback too
-            fb_old = ARTIFACTS_DIR / brand / "feedback" / f"{Path(filename).stem}.json"
+            fb_old = _artifacts_brand_dir(brand) / "feedback" / f"{Path(filename).stem}.json"
             if fb_old.exists():
-                fb_new = ARTIFACTS_DIR / brand / "feedback" / f"{Path(new_name).stem}.json"
+                fb_new = _artifacts_brand_dir(brand) / "feedback" / f"{Path(new_name).stem}.json"
                 fb_old.rename(fb_new)
+            if plan_old.exists():
+                plan_old.rename(plan_new)
             return {"ok": True, "new_name": new_name}
 
     raise HTTPException(status_code=404, detail="文件不存在")
@@ -709,8 +796,10 @@ async def rename_output(brand: str, filename: str, body: dict, current_user: str
 
 @app.delete("/api/brands/{brand}/outputs/{filename}")
 async def delete_output(brand: str, filename: str, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
+    filename = _validate_filename(filename)
     deleted = False
-    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+    for search_dir in [_output_brand_dir(brand), _artifacts_brand_dir(brand)]:
         fpath = search_dir / filename
         if fpath.exists():
             fpath.unlink()
@@ -718,11 +807,11 @@ async def delete_output(brand: str, filename: str, current_user: str = Depends(g
     if not deleted:
         raise HTTPException(status_code=404, detail="文件不存在")
     # Delete feedback too
-    fb_path = ARTIFACTS_DIR / brand / "feedback" / f"{Path(filename).stem}.json"
+    fb_path = _artifacts_brand_dir(brand) / "feedback" / f"{Path(filename).stem}.json"
     if fb_path.exists():
         fb_path.unlink()
     # Delete associated edit plan (match by video stem)
-    brand_dir = ARTIFACTS_DIR / brand
+    brand_dir = _artifacts_brand_dir(brand)
     if brand_dir.exists():
         stem = Path(filename).stem
         exact_plan = brand_dir / f"edit_plan_{stem}.json"
@@ -736,7 +825,9 @@ async def delete_output(brand: str, filename: str, current_user: str = Depends(g
 
 @app.get("/api/brands/{brand}/outputs/{filename}/download")
 async def download_output(brand: str, filename: str, current_user: str = Depends(get_current_user)):
-    for search_dir in [OUTPUT_DIR / brand, ARTIFACTS_DIR / brand]:
+    brand = _validate_brand_name(brand)
+    filename = _validate_filename(filename)
+    for search_dir in [_output_brand_dir(brand), _artifacts_brand_dir(brand)]:
         fpath = search_dir / filename
         if fpath.exists():
             return FileResponse(str(fpath), media_type="video/mp4", filename=filename)
@@ -765,6 +856,7 @@ def _task_dict(task: Task) -> dict[str, Any]:
         "goal": task.goal,
         "labels": task.labels,
         "variants": task.variants,
+        "outputs": _task_outputs(task),
         "error": task.error,
         "unique_src_video": task.unique_src_video,
         "use_understanding": task.use_understanding,
@@ -802,7 +894,7 @@ async def auth_status(current_user: str = Depends(get_current_user)):
 # Prompts
 # ---------------------------------------------------------------------------
 def _load_prompts(brand: str) -> list[dict]:
-    path = INPUTS_DIR / brand / "prompts.json"
+    path = _brand_dir(brand) / "prompts.json"
     if not path.exists():
         return []
     try:
@@ -812,18 +904,20 @@ def _load_prompts(brand: str) -> list[dict]:
 
 
 def _save_prompts(brand: str, prompts: list[dict]) -> None:
-    path = INPUTS_DIR / brand / "prompts.json"
+    path = _brand_dir(brand) / "prompts.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(prompts, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 @app.get("/api/brands/{brand}/prompts")
 async def list_prompts(brand: str, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
     return _load_prompts(brand)
 
 
 @app.post("/api/brands/{brand}/prompts")
 async def create_prompt(brand: str, body: dict, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
     name = body.get("name", "").strip()
     content = body.get("content", "").strip()
     if not name or not content:
@@ -837,6 +931,7 @@ async def create_prompt(brand: str, body: dict, current_user: str = Depends(get_
 
 @app.put("/api/brands/{brand}/prompts/{pid}")
 async def update_prompt(brand: str, pid: str, body: dict, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
     prompts = _load_prompts(brand)
     for p in prompts:
         if p["id"] == pid:
@@ -849,6 +944,7 @@ async def update_prompt(brand: str, pid: str, body: dict, current_user: str = De
 
 @app.delete("/api/brands/{brand}/prompts/{pid}")
 async def delete_prompt(brand: str, pid: str, current_user: str = Depends(get_current_user)):
+    brand = _validate_brand_name(brand)
     prompts = _load_prompts(brand)
     prompts = [p for p in prompts if p["id"] != pid]
     _save_prompts(brand, prompts)
@@ -943,4 +1039,5 @@ async def delete_review_criteria(pid: str, current_user: str = Depends(get_curre
 
 @app.get("/api/brands/{brand}/review-criteria")
 async def list_brand_review_criteria(brand: str, current_user: str = Depends(get_current_user)):
+    _validate_brand_name(brand)
     return _review_criteria_response()

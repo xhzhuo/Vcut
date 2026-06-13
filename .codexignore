@@ -84,6 +84,12 @@ Desktop.ini
 *.bak
 *.bak.*
 *.log
+dsb.zip
+
+# 本地工具/用户目录
+.clawhub/
+.local-backups/
+skills/
 
 # 特定的大文件或临时文件
 C:UsersshazhuoDownloadsvcut_full_diff.txt

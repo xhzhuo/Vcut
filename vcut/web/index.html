@@ -494,7 +494,7 @@
       <div class="done-icon">&#10003;</div>
       <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑完成</p>
       <p style="color:#888; font-size:14px; margin-bottom:16px;" id="done-info"></p>
-      <a class="btn-download" id="download-btn" href="#">下载视频</a>
+      <div id="download-list"></div>
       <br>
       <button class="btn-retry" onclick="resetUI()">继续剪辑</button>
     </div>
@@ -604,6 +604,28 @@ let brandLabels = [];
 let currentTaskId = null;
 let pollTimer = null;
 let expandedBrand = null;
+let pollFailureCount = 0;
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function jsArg(value) {
+  return JSON.stringify(String(value ?? ''))
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/'/g, '\\u0027');
+}
+
+function buttonHtml(label, attrs = '', className = 'btn-icon') {
+  return `<button class="${className}" ${attrs}>${escapeHtml(label)}</button>`;
+}
 
 // ==================== TAB SWITCH ====================
 function switchTab(page) {
@@ -618,6 +640,7 @@ function switchTab(page) {
 async function loadBrands() {
   try {
     const resp = await fetch('/api/brands');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const brands = await resp.json();
     const grid = document.getElementById('brand-grid');
     grid.innerHTML = '';
@@ -632,8 +655,8 @@ async function loadBrands() {
       const card = document.createElement('div');
       card.className = 'brand-card' + (b.has_xlsx ? '' : ' no-xlsx');
       card.innerHTML = `
-        <div class="brand-name">${b.name}</div>
-        <div class="brand-info">${b.video_count} 个视频${b.has_xlsx ? '' : '（无切片方案）'}</div>
+        <div class="brand-name">${escapeHtml(b.name)}</div>
+        <div class="brand-info">${Number(b.video_count) || 0} 个视频${b.has_xlsx ? '' : '（无切片方案）'}</div>
       `;
       if (b.has_xlsx) card.onclick = () => selectBrand(b.name, card);
       grid.appendChild(card);
@@ -649,10 +672,11 @@ async function selectBrand(name, cardEl) {
   selectedBrand = name;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(name)}/xlsx`);
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '读取失败'); }
     const data = await resp.json();
     brandLabels = data.labels;
     document.getElementById('config-summary').innerHTML =
-      `<strong>品牌：</strong>${name}<br><strong>标签：</strong>${brandLabels.join('、')}<br><strong>素材行数：</strong>${data.row_count}`;
+      `<strong>品牌：</strong>${escapeHtml(name)}<br><strong>标签：</strong>${brandLabels.map(escapeHtml).join('、')}<br><strong>素材行数：</strong>${Number(data.row_count) || 0}`;
     renderLabelTags();
     loadPrompts(name);
     showSection('config');
@@ -695,7 +719,13 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   if (!selectedBrand || brandLabels.length === 0) return;
   const btn = document.getElementById('start-btn');
   btn.disabled = true; btn.textContent = '提交中...';
-  const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1 };
+  const variants = parseInt(document.getElementById('variants-input').value, 10) || 1;
+  if (variants < 1 || variants > 10) {
+    showError('生成变体数量必须在 1 到 10 之间');
+    btn.disabled = false; btn.textContent = '开始剪辑';
+    return;
+  }
+  const body = { brand: selectedBrand, labels: brandLabels, variants };
   const goal = document.getElementById('goal-input').value.trim();
   if (goal) body.goal = goal;
   const reviewCriteria = document.getElementById('review-criteria-input').value.trim();
@@ -707,6 +737,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '请求失败'); }
     const data = await resp.json();
     currentTaskId = data.id;
+    pollFailureCount = 0;
     document.getElementById('progress-title').textContent = `正在剪辑 - ${selectedBrand}`;
     // Reset progress bar before showing progress section
     document.getElementById('progress-bar').style.width = '0%';
@@ -736,12 +767,19 @@ async function pollStatus() {
       throw new Error(`HTTP ${resp.status}`);
     }
     const data = await resp.json();
+    pollFailureCount = 0;
     updateProgress(data.stage || 'starting', data.progress || 0);
     if (data.status === 'done') { showDone(data); return; }
     if (data.status === 'failed') { showError(data.error || '未知错误'); return; }
     if (data.status === 'aborted') { showError('剪辑已中止'); return; }
     pollTimer = setTimeout(pollStatus, 1500);
-  } catch (e) { pollTimer = setTimeout(pollStatus, 3000); }
+  } catch (e) {
+    pollFailureCount += 1;
+    if (pollFailureCount >= 2) {
+      document.getElementById('stage-text').textContent = '连接中断，正在重试...';
+    }
+    pollTimer = setTimeout(pollStatus, 3000);
+  }
 }
 
 function showSection(name) {
@@ -765,8 +803,18 @@ function updateProgress(stage, pct) {
 
 function showDone(data) {
   showSection('done');
-  document.getElementById('download-btn').href = `/api/tasks/${currentTaskId}/download`;
-  document.getElementById('done-info').textContent = `品牌: ${data.brand} | 标签: ${data.labels.join('、')}`;
+  const outputs = Array.isArray(data.outputs) ? data.outputs : [];
+  document.getElementById('done-info').textContent =
+    `品牌: ${data.brand} | 标签: ${(data.labels || []).join('、')} | 生成 ${outputs.length || 1} 个成品`;
+  const list = document.getElementById('download-list');
+  if (outputs.length > 1) {
+    list.innerHTML = outputs.map(item =>
+      `<a class="btn-download" href="${escapeHtml(item.url)}" style="margin:6px;">下载变体 ${Number(item.index) || ''}</a>`
+    ).join('');
+  } else {
+    const url = outputs[0]?.url || `/api/tasks/${currentTaskId}/download`;
+    list.innerHTML = `<a class="btn-download" href="${escapeHtml(url)}">下载视频</a>`;
+  }
 }
 
 function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
@@ -794,6 +842,8 @@ function resetUI() {
   // Reset progress bar and stage tags
   document.getElementById('progress-bar').style.width = '0%';
   document.getElementById('stage-text').textContent = '准备中...';
+  document.getElementById('download-list').innerHTML = '';
+  pollFailureCount = 0;
   document.querySelectorAll('.stage-tag').forEach(el => {
     el.classList.remove('done', 'active');
   });
@@ -804,9 +854,20 @@ function resetUI() {
 // ==================== MANAGE PAGE ====================
 let manageExpandedBrand = null;
 
+function findBrandRow(brand) {
+  return [...document.querySelectorAll('.brand-row')].find(el => el.dataset.brand === brand);
+}
+
+function findBrandPanel(brand, type) {
+  return [...document.querySelectorAll('.file-panel')].find(
+    el => el.dataset.brand === brand && el.dataset.panelType === type
+  );
+}
+
 async function loadManageBrands() {
   try {
     const resp = await fetch('/api/brands');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const brands = await resp.json();
     const list = document.getElementById('manage-brand-list');
     list.innerHTML = '';
@@ -814,16 +875,16 @@ async function loadManageBrands() {
     brands.forEach(b => {
       const row = document.createElement('div');
       row.className = 'brand-row';
-      row.id = `brand-row-${b.name}`;
+      row.dataset.brand = b.name;
       row.innerHTML = `
         <div class="brand-row-left">
-          <span class="brand-row-name">${b.name}</span>
-          <span class="brand-row-meta">${b.video_count} 个视频${b.has_xlsx ? ' · 有切片方案' : ''}</span>
+          <span class="brand-row-name">${escapeHtml(b.name)}</span>
+          <span class="brand-row-meta">${Number(b.video_count) || 0} 个视频${b.has_xlsx ? ' · 有切片方案' : ''}</span>
         </div>
         <div class="brand-actions">
-          <button class="btn-icon" onclick="event.stopPropagation(); toggleFilePanel('${b.name}')">文件</button>
-          <button class="btn-icon" onclick="event.stopPropagation(); togglePromptPanel('${b.name}')">Prompt</button>
-          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteBrand('${b.name}')">删除</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); toggleFilePanel(${jsArg(b.name)})'>文件</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); togglePromptPanel(${jsArg(b.name)})'>Prompt</button>
+          <button class="btn-icon danger" onclick='event.stopPropagation(); deleteBrand(${jsArg(b.name)})'>删除</button>
         </div>
       `;
       row.onclick = () => toggleFilePanel(b.name);
@@ -831,13 +892,15 @@ async function loadManageBrands() {
 
       const panel = document.createElement('div');
       panel.className = 'file-panel';
-      panel.id = `file-panel-${b.name}`;
+      panel.dataset.panelType = 'files';
+      panel.dataset.brand = b.name;
       panel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
       list.appendChild(panel);
 
       const promptPanel = document.createElement('div');
       promptPanel.className = 'file-panel';
-      promptPanel.id = `prompt-panel-${b.name}`;
+      promptPanel.dataset.panelType = 'prompts';
+      promptPanel.dataset.brand = b.name;
       promptPanel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
       list.appendChild(promptPanel);
     });
@@ -851,8 +914,9 @@ async function loadManageBrands() {
 }
 
 async function toggleFilePanel(brand) {
-  const panel = document.getElementById(`file-panel-${brand}`);
-  const row = document.getElementById(`brand-row-${brand}`);
+  const panel = findBrandPanel(brand, 'files');
+  const row = findBrandRow(brand);
+  if (!panel || !row) return;
 
   if (manageExpandedBrand === brand) {
     panel.classList.remove('active');
@@ -863,8 +927,8 @@ async function toggleFilePanel(brand) {
 
   // Close previous
   if (manageExpandedBrand) {
-    const prev = document.getElementById(`file-panel-${manageExpandedBrand}`);
-    const prevRow = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    const prev = findBrandPanel(manageExpandedBrand, 'files');
+    const prevRow = findBrandRow(manageExpandedBrand);
     if (prev) prev.classList.remove('active');
     if (prevRow) prevRow.classList.remove('expanded');
   }
@@ -884,7 +948,8 @@ async function toggleFilePanel(brand) {
 }
 
 function renderFilePanel(brand, files) {
-  const panel = document.getElementById(`file-panel-${brand}`);
+  const panel = findBrandPanel(brand, 'files');
+  if (!panel) return;
   let html = '';
 
   files.forEach(f => {
@@ -892,11 +957,11 @@ function renderFilePanel(brand, files) {
     html += `
       <div class="file-row">
         <div>
-          <span class="file-name">${f.name}</span>
-          <span class="file-size">${f.size_mb} MB</span>
-          <span class="file-type ${typeClass}">${f.type}</span>
+          <span class="file-name">${escapeHtml(f.name)}</span>
+          <span class="file-size">${Number(f.size_mb) || 0} MB</span>
+          <span class="file-type ${typeClass}">${escapeHtml(f.type)}</span>
         </div>
-        <button class="btn-delete-file" onclick="deleteFile('${brand}', '${encodeURIComponent(f.name)}')" title="删除">&times;</button>
+        <button class="btn-delete-file" onclick='deleteFile(${jsArg(brand)}, ${jsArg(f.name)})' title="删除">&times;</button>
       </div>
     `;
   });
@@ -909,7 +974,7 @@ function renderFilePanel(brand, files) {
     <div class="upload-row">
       <label class="upload-btn">
         上传视频或切片方案 (.mp4 / .xlsx)
-        <input type="file" accept=".mp4,.mov,.avi,.mkv,.xlsx,.MP4,.MOV,.AVI,.MKV,.XLSX" onchange="uploadFile('${brand}', this)">
+        <input type="file" accept=".mp4,.mov,.avi,.mkv,.xlsx,.MP4,.MOV,.AVI,.MKV,.XLSX" onchange='uploadFile(${jsArg(brand)}, this)'>
       </label>
     </div>
   `;
@@ -936,7 +1001,6 @@ async function uploadFile(brand, input) {
 }
 
 async function deleteFile(brand, filename) {
-  filename = decodeURIComponent(filename);
   if (!confirm(`确定删除 ${filename}？`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
@@ -953,8 +1017,9 @@ async function deleteFile(brand, filename) {
 let manageExpandedPrompt = null;
 
 async function togglePromptPanel(brand) {
-  const panel = document.getElementById(`prompt-panel-${brand}`);
-  const row = document.getElementById(`brand-row-${brand}`);
+  const panel = findBrandPanel(brand, 'prompts');
+  const row = findBrandRow(brand);
+  if (!panel || !row) return;
 
   if (manageExpandedPrompt === brand) {
     panel.classList.remove('active');
@@ -964,16 +1029,16 @@ async function togglePromptPanel(brand) {
   }
 
   if (manageExpandedPrompt) {
-    const prev = document.getElementById(`prompt-panel-${manageExpandedPrompt}`);
-    const prevRow = document.getElementById(`brand-row-${manageExpandedPrompt}`);
+    const prev = findBrandPanel(manageExpandedPrompt, 'prompts');
+    const prevRow = findBrandRow(manageExpandedPrompt);
     if (prev) prev.classList.remove('active');
     if (prevRow) prevRow.classList.remove('expanded');
   }
 
   // Close file panel too
   if (manageExpandedBrand) {
-    const fp = document.getElementById(`file-panel-${manageExpandedBrand}`);
-    const fr = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    const fp = findBrandPanel(manageExpandedBrand, 'files');
+    const fr = findBrandRow(manageExpandedBrand);
     if (fp) fp.classList.remove('active');
     if (fr) fr.classList.remove('expanded');
     manageExpandedBrand = null;
@@ -993,19 +1058,20 @@ async function togglePromptPanel(brand) {
 }
 
 function renderPromptPanel(brand, prompts) {
-  const panel = document.getElementById(`prompt-panel-${brand}`);
+  const panel = findBrandPanel(brand, 'prompts');
+  if (!panel) return;
   let html = '';
 
   prompts.forEach(p => {
     html += `
       <div class="file-row" id="prompt-row-${p.id}" style="align-items:flex-start;">
         <div style="flex:1; min-width:0;">
-          <div style="font-weight:500; margin-bottom:4px;">${p.name}</div>
-          <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${p.content}</div>
+          <div style="font-weight:500; margin-bottom:4px;">${escapeHtml(p.name)}</div>
+          <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${escapeHtml(p.content)}</div>
         </div>
         <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
-          <button class="btn-icon" onclick="editPrompt('${brand}', '${p.id}', '${encodeURIComponent(p.name)}', '${encodeURIComponent(p.content)}')">编辑</button>
-          <button class="btn-icon danger" onclick="deletePrompt('${brand}', '${p.id}')">删除</button>
+          <button class="btn-icon" onclick='editPrompt(${jsArg(brand)}, ${jsArg(p.id)}, ${jsArg(p.name)}, ${jsArg(p.content)})'>编辑</button>
+          <button class="btn-icon danger" onclick='deletePrompt(${jsArg(brand)}, ${jsArg(p.id)})'>删除</button>
         </div>
       </div>`;
   });
@@ -1017,17 +1083,18 @@ function renderPromptPanel(brand, prompts) {
   html += `
     <div style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
       <div style="font-size:13px; color:#aaa; margin-bottom:8px;">添加新 Prompt</div>
-      <input class="form-input" id="new-prompt-name-${brand}" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
-      <textarea class="form-input" id="new-prompt-content-${brand}" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
-      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="addPrompt('${brand}')">添加</button>
+      <input class="form-input" data-role="new-prompt-name" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
+      <textarea class="form-input" data-role="new-prompt-content" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='addPrompt(${jsArg(brand)})'>添加</button>
     </div>`;
 
   panel.innerHTML = html;
 }
 
 async function addPrompt(brand) {
-  const name = document.getElementById(`new-prompt-name-${brand}`).value.trim();
-  const content = document.getElementById(`new-prompt-content-${brand}`).value.trim();
+  const panel = findBrandPanel(brand, 'prompts');
+  const name = panel?.querySelector('[data-role="new-prompt-name"]')?.value.trim() || '';
+  const content = panel?.querySelector('[data-role="new-prompt-content"]')?.value.trim() || '';
   if (!name || !content) { alert('名称和内容不能为空'); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`, {
@@ -1040,19 +1107,17 @@ async function addPrompt(brand) {
   } catch (e) { alert('添加失败: ' + e.message); }
 }
 
-function editPrompt(brand, pid, encName, encContent) {
-  const name = decodeURIComponent(encName);
-  const content = decodeURIComponent(encContent);
+function editPrompt(brand, pid, name, content) {
   const row = document.getElementById(`prompt-row-${pid}`);
   if (!row) return;
   row.innerHTML = `
     <div style="flex:1; min-width:0;">
-      <input class="form-input" id="edit-prompt-name-${pid}" value="${name.replace(/"/g, '&quot;')}" style="margin-bottom:6px; font-size:13px;">
-      <textarea class="form-input" id="edit-prompt-content-${pid}" rows="4" style="font-size:13px;">${content}</textarea>
+      <input class="form-input" id="edit-prompt-name-${pid}" value="${escapeHtml(name)}" style="margin-bottom:6px; font-size:13px;">
+      <textarea class="form-input" id="edit-prompt-content-${pid}" rows="4" style="font-size:13px;">${escapeHtml(content)}</textarea>
     </div>
     <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px; align-self:flex-end;">
-      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="savePrompt('${brand}', '${pid}')">保存</button>
-      <button class="btn-sm" style="background:#333;color:#ccc;" onclick="togglePromptPanel('${brand}'); setTimeout(() => togglePromptPanel('${brand}'), 100);">取消</button>
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='savePrompt(${jsArg(brand)}, ${jsArg(pid)})'>保存</button>
+      <button class="btn-sm" style="background:#333;color:#ccc;" onclick='togglePromptPanel(${jsArg(brand)}); setTimeout(() => togglePromptPanel(${jsArg(brand)}), 100);'>取消</button>
     </div>`;
   document.getElementById(`edit-prompt-content-${pid}`).focus();
 }
@@ -1078,7 +1143,8 @@ async function savePrompt(brand, pid) {
 async function deletePrompt(brand, pid) {
   if (!confirm('确定删除此 Prompt？')) return;
   try {
-    await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
   } catch (e) { alert('删除失败: ' + e.message); }
@@ -1148,7 +1214,10 @@ async function loadPrompts(brand) {
     const sel = document.getElementById('prompt-select');
     sel.innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
     brandPrompts.forEach(p => {
-      sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
     });
   } catch (e) { console.error('loadPrompts failed', e); }
 }
@@ -1259,12 +1328,17 @@ async function deleteCurrentReviewCriteria() {
 // ==================== OUTPUT PAGE ====================
 async function loadOutputBrandSelect() {
   const resp = await fetch('/api/brands');
+  if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
   const brands = await resp.json();
   const sel = document.getElementById('output-brand-select');
   const current = sel.value;
   sel.innerHTML = '<option value="">选择品牌查看成品</option>';
   brands.forEach(b => {
-    sel.innerHTML += `<option value="${b.name}" ${b.name === current ? 'selected' : ''}>${b.name}</option>`;
+    const opt = document.createElement('option');
+    opt.value = b.name;
+    opt.textContent = b.name;
+    if (b.name === current) opt.selected = true;
+    sel.appendChild(opt);
   });
   if (sel.value) loadOutputs();
 }
@@ -1276,6 +1350,7 @@ async function loadOutputs() {
 
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`, {cache: 'no-cache'});
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const outputs = await resp.json();
 
     if (outputs.length === 0) {
@@ -1293,15 +1368,15 @@ async function loadOutputs() {
       header.className = 'output-header';
       header.innerHTML = `
         <div>
-          <span class="output-name">${v.name}</span>
-          <span class="output-size">${v.size_mb} MB</span>
-          <span class="output-time">${v.created_at || ''}</span>
+          <span class="output-name">${escapeHtml(v.name)}</span>
+          <span class="output-size">${Number(v.size_mb) || 0} MB</span>
+          <span class="output-time">${escapeHtml(v.created_at || '')}</span>
           ${v.feedback ? '<span class="plan-role" style="background:#1a3c2a;color:#4caf50;margin-left:8px;">已评价</span>' : ''}
         </div>
         <div class="output-actions">
           <button class="btn-icon" onclick="event.stopPropagation(); window.open('/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(v.name)}/download')">下载</button>
-          <button class="btn-icon" onclick="event.stopPropagation(); renameOutput('${brand}', '${encodeURIComponent(v.name)}')">重命名</button>
-          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteOutput('${brand}', '${encodeURIComponent(v.name)}')">删除</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); renameOutput(${jsArg(brand)}, ${jsArg(v.name)})'>重命名</button>
+          <button class="btn-icon danger" onclick='event.stopPropagation(); deleteOutput(${jsArg(brand)}, ${jsArg(v.name)})'>删除</button>
         </div>
       `;
       header.onclick = () => toggleOutputBody(idx);
@@ -1321,11 +1396,11 @@ async function loadOutputs() {
             const durStr = (typeof dur === 'number' && !isNaN(dur)) ? dur.toFixed(1) + 's' : '-';
             return '<tr>'
               + '<td>' + (i + 1) + '</td>'
-              + '<td>' + (item.video_id || '-') + '</td>'
+              + '<td>' + escapeHtml(item.video_id || '-') + '</td>'
               + '<td>' + fmtTime(item.start) + ' - ' + fmtTime(item.end) + '</td>'
               + '<td>' + durStr + '</td>'
-              + '<td><span class="plan-role">' + (item.label || '-') + '</span></td>'
-              + '<td class="plan-reason">' + (item.reason || '-') + '</td>'
+              + '<td><span class="plan-role">' + escapeHtml(item.label || '-') + '</span></td>'
+              + '<td class="plan-reason">' + escapeHtml(item.reason || '-') + '</td>'
               + '</tr>';
           }).join('');
           planHtml = '<div style="margin-bottom:12px;">'
@@ -1353,11 +1428,11 @@ async function loadOutputs() {
             ${[1,2,3,4,5].map(n => `<button class="star ${n <= (fb.rating||0) ? 'filled' : ''}" onclick="setRating(${idx},${n})">&#9733;</button>`).join('')}
           </div>
           <div class="feedback-tags" id="fbtags-${idx}">
-            ${fbTags.map(t => `<span class="feedback-tag ${selectedTags.includes(t) ? 'selected' : ''}" onclick="toggleFbTag(this)" data-tag="${t}">${t}</span>`).join('')}
+            ${fbTags.map(t => `<span class="feedback-tag ${selectedTags.includes(t) ? 'selected' : ''}" onclick="toggleFbTag(this)" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('')}
           </div>
-          <textarea class="feedback-textarea" id="fbtext-${idx}" placeholder="输入对这个视频的意见和建议...">${fb.comment || ''}</textarea>
+          <textarea class="feedback-textarea" id="fbtext-${idx}" placeholder="输入对这个视频的意见和建议...">${escapeHtml(fb.comment || '')}</textarea>
           <div style="display:flex;align-items:center;gap:12px;">
-            <button class="btn-feedback" onclick="submitFeedback('${brand}', '${v.name}', ${idx})">提交反馈</button>
+            <button class="btn-feedback" onclick='submitFeedback(${jsArg(brand)}, ${jsArg(v.name)}, ${idx})'>提交反馈</button>
             <span class="feedback-saved" id="fbsaved-${idx}">已保存</span>
           </div>
         </div>
@@ -1413,7 +1488,6 @@ async function submitFeedback(brand, filename, idx) {
 }
 
 function renameOutput(brand, oldName) {
-  oldName = decodeURIComponent(oldName);
   // Find the output card containing this button
   const cards = document.querySelectorAll('.output-card');
   for (const card of cards) {
@@ -1422,8 +1496,8 @@ function renameOutput(brand, oldName) {
       const actions = card.querySelector('.output-actions');
       if (!actions) return;
       actions.innerHTML = `
-        <input class="form-input" id="rename-output-input" value="${oldName.replace(/"/g, '&quot;')}" style="width:200px; padding:6px 10px; font-size:13px;">
-        <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="saveRename('${brand}', '${encodeURIComponent(oldName)}')">保存</button>
+        <input class="form-input" id="rename-output-input" value="${escapeHtml(oldName)}" style="width:200px; padding:6px 10px; font-size:13px;">
+        <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='saveRename(${jsArg(brand)}, ${jsArg(oldName)})'>保存</button>
         <button class="btn-sm" style="background:#333;color:#ccc;" onclick="loadOutputs()">取消</button>`;
       document.getElementById('rename-output-input').focus();
       document.getElementById('rename-output-input').select();
@@ -1432,8 +1506,7 @@ function renameOutput(brand, oldName) {
   }
 }
 
-async function saveRename(brand, oldNameEnc) {
-  const oldName = decodeURIComponent(oldNameEnc);
+async function saveRename(brand, oldName) {
   const input = document.getElementById('rename-output-input');
   if (!input) return;
   const newName = input.value.trim();
@@ -1453,7 +1526,6 @@ async function saveRename(brand, oldNameEnc) {
 }
 
 async function deleteOutput(brand, filename) {
-  filename = decodeURIComponent(filename);
   if (!confirm(`确定删除成品视频 ${filename}？`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(filename)}`, { method: 'DELETE' });

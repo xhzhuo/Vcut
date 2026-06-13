@@ -37,6 +37,14 @@ pytest-cache-files-*/
 # Archived temporary files
 _archived/
 
+# Local tool/user files
+.clawhub/
+.local-backups/
+skills/
+*.bak
+*.bak.*
+dsb.zip
+
 # OS
 .DS_Store
 Thumbs.db

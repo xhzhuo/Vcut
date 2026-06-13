@@ -13,6 +13,8 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 from vcut.core.config import DEFAULT_MODEL_NAMES
+from vcut.manual.goal import default_structured_goal, normalize_goal_with_llm
+from vcut.manual.prompt_loader import load_manual_prompt
 from vcut.manual.quality import validate_manual_selection
 from vcut.manual.reviewer import review_manual_edit_plan
 from vcut.manual.segments import normalize_manual_label
@@ -130,6 +132,7 @@ def _select_with_llm(
     labels: list[str],
     *,
     llm_goal: str | None,
+    structured_goal: dict,
     llm_model_name: str | None,
     llm_api_key_env: str | None,
     llm_endpoint: str | None,
@@ -153,7 +156,6 @@ def _select_with_llm(
             if str(item.get("segment_id", "")).strip()
         )
     model_name = str(llm_model_name or "").strip() or DEFAULT_MODEL_NAMES["strategy"]
-    goal = str(llm_goal or "").strip() or "选择一组台词与画面衔接最连贯的短视频片段。"
     avoid_set = set(avoid_segment_ids)
     for lbl in list(candidates_by_label.keys()):
         candidates_by_label[lbl] = [
@@ -163,29 +165,12 @@ def _select_with_llm(
             raise RuntimeError(f"No more unique candidates available for label: {lbl}")
 
     prompt = {
-        "goal": goal,
+        "structured_goal": structured_goal,
         "labels_in_order": labels,
         "candidates_by_label": candidates_by_label,
     }
 
-    system_content = (
-        "你是一位资深短视频剪辑策划。只返回严格 JSON，不要输出 Markdown 或额外解释。\n\n"
-        "## 任务\n"
-        "按照用户提供的标签顺序，为每个标签精确选择 1 个视频片段。\n\n"
-        "## 不可妥协的质量原则\n"
-        "不要为了凑够数量而选择低质量备选片段。\n"
-        "如果现有候选片段无法同时满足连贯性、唯一性、避免重复和用户明确目标，"
-        "请返回错误 JSON，不要强行生成质量弱的剪辑方案。\n"
-        "宁可高质量选片失败，也不要生成一个完整但低质量的成片。\n\n"
-        "## 选片标准\n"
-        "1. 相邻片段之间的台词连贯性是最高优先级。\n"
-        "2. 避免重复话术、重复产品卖点，以及相邻片段表达同一个语义点。\n"
-        "3. 保持完整叙事链路；不要从痛点或铺垫直接跳到 CTA，中间必须有自然桥接。\n"
-        "4. 产品或品牌露出必须由故事自然引出，不能像机械插入的广告。\n"
-        "5. 选择最能服务用户目标的片段。\n"
-        "6. 不要让所有标签都来自同一个 src_video；这等同于没有真正跨素材池选片。"
-        "当方案包含多个标签时，至少使用两个不同来源视频。\n"
-    )
+    system_content = load_manual_prompt("selector_system.zh.md")
 
     # Add visual understanding instructions if data is present
     has_visual = any(
@@ -215,17 +200,6 @@ def _select_with_llm(
             "4. 利用 transition_in/transition_out 选择更顺滑的相邻组合。\n"
             "5. 检查上一段尾帧到下一段首帧的视觉连续性。\n"
         )
-
-    system_content += (
-        "\n## 输出格式\n"
-        '返回一个 JSON object，必须包含 "items" 字段；"items" 是数组，每个元素包含：\n'
-        '- "label"：标签字符串，必须与输入顺序完全一致。\n'
-        '- "segment_id"：被选中片段的 ID。\n'
-        '- "reason"：中文理由，先分析约束条件，再说明选择原因。\n\n'
-        '如果无法完成高质量选片，请返回 {"error": "...", "needed_improvements": ["..."]}。\n'
-        "error 必须说明需要改进什么，例如某个标签候选不足、转录覆盖不够、缺少产品桥接素材，"
-        "或来源片段重复过多。\n"
-    )
 
     if unique_src_video:
         system_content += (
@@ -454,6 +428,16 @@ def build_manual_edit_plans(
             "Manual edit plan generation requires LLM selection; deterministic non-LLM selection has been removed."
         )
 
+    try:
+        structured_goal = normalize_goal_with_llm(
+            llm_goal,
+            llm_model_name=llm_model_name,
+            llm_api_key_env=llm_api_key_env,
+            llm_endpoint=llm_endpoint,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Goal normalization failed; using default structured goal: %s", exc)
+        structured_goal = default_structured_goal(llm_goal)
     avoid_plans: list[list[dict]] = list(prior_plans or [])
     plans: list[list[dict]] = []
     for idx in range(count):
@@ -476,6 +460,7 @@ def build_manual_edit_plans(
                         segments=segments,
                         labels=normalized_labels,
                         llm_goal=llm_goal,
+                        structured_goal=structured_goal,
                         llm_model_name=llm_model_name,
                         llm_api_key_env=llm_api_key_env,
                         llm_endpoint=llm_endpoint,
@@ -502,6 +487,7 @@ def build_manual_edit_plans(
                         edit_plan=plan,
                         labels=normalized_labels,
                         goal=llm_goal,
+                        structured_goal=structured_goal,
                         review_config=review_config,
                         llm_model_name=llm_model_name,
                         llm_api_key_env=llm_api_key_env,
