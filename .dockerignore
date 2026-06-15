@@ -12,3 +12,6 @@ ffmpeg/
 venv
 *.egg-info
 .pytest_tmp
+_archived
+output
+docs/videos

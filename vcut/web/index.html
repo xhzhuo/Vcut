@@ -14,7 +14,7 @@
   }
   .card {
     background: #1a1a1a; border-radius: 16px; padding: 40px;
-    width: 860px; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
   .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
@@ -32,6 +32,8 @@
   /* Page containers */
   .page { display: none; }
   .page.active { display: block; }
+  .page.active { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
   /* Brand grid */
   .brand-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
@@ -44,17 +46,6 @@
   .brand-name { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
   .brand-info { color: #888; font-size: 13px; }
   .no-xlsx { opacity: 0.5; pointer-events: none; }
-
-  /* Mode selector */
-  .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
-  .mode-card {
-    background: #222; border: 2px solid #333; border-radius: 10px;
-    padding: 14px; cursor: pointer; transition: all 0.2s; text-align: center;
-  }
-  .mode-card:hover { border-color: #4a9eff; background: #1a2a3a; }
-  .mode-card.selected { border-color: #4a9eff; background: #1a3a5c; }
-  .mode-icon { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #4a9eff; }
-  .mode-name { font-size: 14px; font-weight: 600; color: #e0e0e0; }
 
   /* Config form */
   .config-section { display: none; }
@@ -98,6 +89,26 @@
   .toggle-switch input:checked + .toggle-slider { background: #4a9eff; }
   .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
 
+  /* Mode Selector */
+  .mode-selector { display: flex; gap: 12px; }
+  .mode-option {
+    flex: 1; padding: 16px; background: #111; border: 2px solid #333;
+    border-radius: 12px; cursor: pointer; transition: all 0.2s;
+    text-align: center; position: relative;
+  }
+  .mode-option:hover { border-color: #555; background: #1a1a1a; }
+  .mode-option.active {
+    border-color: #4a9eff; background: #0d1f33;
+    box-shadow: 0 0 0 1px #4a9eff, 0 2px 12px rgba(74, 158, 255, 0.15);
+  }
+  .mode-option.active::after {
+    content: "✓"; position: absolute; top: 8px; right: 10px;
+    font-size: 12px; color: #4a9eff; font-weight: 700;
+  }
+  .mode-icon { font-size: 28px; margin-bottom: 8px; }
+  .mode-label { font-size: 14px; font-weight: 600; color: #4a9eff; margin-bottom: 4px; }
+  .mode-desc { font-size: 12px; color: #888; }
+
   /* Buttons */
   .btn {
     width: 100%; padding: 14px; border: none; border-radius: 8px;
@@ -136,6 +147,14 @@
   }
   .stage-tag.active { background: #1a3a5c; color: #4a9eff; }
   .stage-tag.done { background: #1a3c2a; color: #4caf50; }
+
+  .btn-abort {
+    background: #ff4757; color: #fff; border: none; padding: 12px 32px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; margin-top: 16px;
+  }
+  .btn-abort:hover { background: #ff6b7a; }
+  .btn-abort:disabled { background: #444; color: #888; cursor: not-allowed; }
 
   /* Done / Error */
   .done-section { display: none; text-align: center; }
@@ -325,7 +344,7 @@
   #app.active { display: block; }
   .login-card {
     background: #1a1a1a; border-radius: 16px; padding: 48px 40px;
-    width: 100%; max-width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
     text-align: center;
   }
   .login-card h1 { margin-bottom: 8px; }
@@ -388,31 +407,12 @@
 
     <!-- Step 2: Config -->
     <div class="config-section" id="config-section">
-      <div class="storage-bar" id="token-usage-bar"></div>
       <p class="section-title">配置剪辑参数</p>
       <div class="config-summary" id="config-summary"></div>
 
       <div class="form-group">
         <label>标签顺序（拖拽排序）</label>
         <div class="label-tags" id="label-tags"></div>
-      </div>
-
-      <div class="form-group">
-        <label>选片模式</label>
-        <div class="mode-grid" id="mode-grid">
-          <div class="mode-card selected" data-mode="asr" onclick="selectMode('asr')">
-            <div class="mode-icon">A</div>
-            <div class="mode-name">纯 ASR</div>
-          </div>
-          <div class="mode-card" data-mode="asr+video" onclick="selectMode('asr+video')">
-            <div class="mode-icon">A+V</div>
-            <div class="mode-name">ASR + 视频理解</div>
-          </div>
-          <div class="mode-card" data-mode="video" onclick="selectMode('video')">
-            <div class="mode-icon">V</div>
-            <div class="mode-name">纯视频理解</div>
-          </div>
-        </div>
       </div>
 
       <div class="form-group">
@@ -430,12 +430,43 @@
         <textarea class="form-input" id="goal-input" rows="3" placeholder="描述剪辑目标，例如：突出产品卖点的15秒短视频，台词衔接自然"></textarea>
       </div>
 
+      <div class="form-group">
+        <label>LLM Review 标准</label>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <select class="form-input" id="review-criteria-select" style="flex:1;" onchange="applyReviewCriteria()">
+            <option value="">默认 Review 标准</option>
+          </select>
+          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="resetReviewCriteria()">恢复默认</button>
+          <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" type="button" onclick="saveCurrentReviewCriteria()">保存为预设</button>
+          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="updateCurrentReviewCriteria()">更新预设</button>
+          <button class="btn-sm" style="background:#3a1f1f;color:#ff8a8a;" type="button" onclick="deleteCurrentReviewCriteria()">删除预设</button>
+        </div>
+        <textarea class="form-input" id="review-criteria-input" rows="7" placeholder="只填写审核标准条目，例如：1. 相邻片段在台词、情绪和画面上都应该自然衔接。"></textarea>
+        <div id="review-criteria-status" style="color:#888; font-size:12px; margin-top:6px;"></div>
+      </div>
+
       <div class="form-group" style="display:flex; align-items:center; gap:10px;">
         <label class="toggle-switch">
           <input type="checkbox" id="unique-src-toggle">
           <span class="toggle-slider"></span>
         </label>
         <label for="unique-src-toggle" style="margin:0; cursor:pointer;">每个标签来自不同视频来源</label>
+      </div>
+
+      <div class="form-group">
+        <label>分析模式</label>
+        <div class="mode-selector" id="mode-selector">
+          <div class="mode-option active" data-value="asr" onclick="selectMode(this)">
+            <div class="mode-icon">🎤</div>
+            <div class="mode-label">ASR</div>
+            <div class="mode-desc">语音转文字，速度快</div>
+          </div>
+          <div class="mode-option" data-value="asr+visual" onclick="selectMode(this)">
+            <div class="mode-icon">🎬</div>
+            <div class="mode-label">ASR + 视频理解</div>
+            <div class="mode-desc">画面分析 + 语音，更精准</div>
+          </div>
+        </div>
       </div>
 
       <button class="btn btn-primary" id="start-btn">开始剪辑</button>
@@ -449,12 +480,13 @@
         <span class="stage-tag" data-stage="starting">准备中</span>
         <span class="stage-tag" data-stage="segments">素材解析</span>
         <span class="stage-tag" data-stage="transcripts">语音识别</span>
-        <span class="stage-tag" data-stage="visual">视觉理解</span>
+        <span class="stage-tag" data-stage="visual">视频理解</span>
         <span class="stage-tag" data-stage="strategy">策略生成</span>
         <span class="stage-tag" data-stage="render">视频渲染</span>
       </div>
       <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
       <div class="stage-text" id="stage-text">准备中...</div>
+      <button class="btn-abort" id="abort-btn" onclick="abortTask()">中止剪辑</button>
     </div>
 
     <!-- Step 4: Done -->
@@ -462,7 +494,7 @@
       <div class="done-icon">&#10003;</div>
       <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑完成</p>
       <p style="color:#888; font-size:14px; margin-bottom:16px;" id="done-info"></p>
-      <a class="btn-download" id="download-btn" href="#">下载视频</a>
+      <div id="download-list"></div>
       <br>
       <button class="btn-retry" onclick="resetUI()">继续剪辑</button>
     </div>
@@ -519,7 +551,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   const errEl = document.getElementById('login-error');
   btn.disabled = true; btn.textContent = '登录中...'; errEl.style.display = 'none';
   try {
-    const resp = await fetch('/api/login', {
+    const resp = await fetch('/api/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -529,6 +561,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     });
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || '登录失败'); }
     showApp();
+    loadReviewCriteria();
     loadBrands();
   } catch (e) {
     errEl.textContent = e.message; errEl.style.display = 'block';
@@ -540,7 +573,7 @@ document.getElementById('login-pass').addEventListener('keydown', (e) => {
 });
 
 async function doLogout() {
-  await fetch('/api/logout', { method: 'POST' });
+  await fetch('/api/auth/logout', { method: 'POST' });
   showLogin();
 }
 
@@ -548,7 +581,7 @@ async function doLogout() {
 const _origFetch = window.fetch;
 window.fetch = async function(...args) {
   const resp = await _origFetch.apply(this, args);
-  if (resp.status === 401 && !args[0].includes('/api/login') && !args[0].includes('/api/auth/status')) {
+  if (resp.status === 401 && !args[0].includes('/api/auth/login') && !args[0].includes('/api/auth/status')) {
     showLogin();
     throw new Error('未登录');
   }
@@ -560,7 +593,7 @@ window.fetch = async function(...args) {
   try {
     const resp = await _origFetch('/api/auth/status');
     const data = await resp.json();
-    if (data.logged_in) { showApp(); loadBrands(); }
+    if (data.logged_in) { showApp(); loadReviewCriteria(); loadBrands(); }
     else { showLogin(); }
   } catch { showLogin(); }
 })();
@@ -571,7 +604,28 @@ let brandLabels = [];
 let currentTaskId = null;
 let pollTimer = null;
 let expandedBrand = null;
-let selectedMode = 'asr';
+let pollFailureCount = 0;
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function jsArg(value) {
+  return JSON.stringify(String(value ?? ''))
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/'/g, '\\u0027');
+}
+
+function buttonHtml(label, attrs = '', className = 'btn-icon') {
+  return `<button class="${className}" ${attrs}>${escapeHtml(label)}</button>`;
+}
 
 // ==================== TAB SWITCH ====================
 function switchTab(page) {
@@ -579,20 +633,14 @@ function switchTab(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   if (page === 'manage') { loadStorage(); loadManageBrands(); }
   else if (page === 'output') { loadStorage(); loadOutputBrandSelect(); }
-  else { loadBrands(); if (selectedBrand) loadPrompts(selectedBrand); }
-}
-
-function selectMode(mode) {
-  selectedMode = mode;
-  document.querySelectorAll('.mode-card').forEach(c => {
-    c.classList.toggle('selected', c.dataset.mode === mode);
-  });
+  else { loadReviewCriteria(); loadBrands(); if (selectedBrand) loadPrompts(selectedBrand); }
 }
 
 // ==================== EDIT PAGE ====================
 async function loadBrands() {
   try {
     const resp = await fetch('/api/brands');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const brands = await resp.json();
     const grid = document.getElementById('brand-grid');
     grid.innerHTML = '';
@@ -607,8 +655,8 @@ async function loadBrands() {
       const card = document.createElement('div');
       card.className = 'brand-card' + (b.has_xlsx ? '' : ' no-xlsx');
       card.innerHTML = `
-        <div class="brand-name">${b.name}</div>
-        <div class="brand-info">${b.video_count} 个视频${b.has_xlsx ? '' : '（无切片方案）'}</div>
+        <div class="brand-name">${escapeHtml(b.name)}</div>
+        <div class="brand-info">${Number(b.video_count) || 0} 个视频${b.has_xlsx ? '' : '（无切片方案）'}</div>
       `;
       if (b.has_xlsx) card.onclick = () => selectBrand(b.name, card);
       grid.appendChild(card);
@@ -624,14 +672,14 @@ async function selectBrand(name, cardEl) {
   selectedBrand = name;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(name)}/xlsx`);
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '读取失败'); }
     const data = await resp.json();
     brandLabels = data.labels;
     document.getElementById('config-summary').innerHTML =
-      `<strong>品牌：</strong>${name}<br><strong>标签：</strong>${brandLabels.join('、')}<br><strong>素材行数：</strong>${data.row_count}`;
+      `<strong>品牌：</strong>${escapeHtml(name)}<br><strong>标签：</strong>${brandLabels.map(escapeHtml).join('、')}<br><strong>素材行数：</strong>${Number(data.row_count) || 0}`;
     renderLabelTags();
     loadPrompts(name);
     showSection('config');
-    loadStorage();
   } catch (e) {
     alert('读取切片方案失败: ' + e.message);
   }
@@ -662,20 +710,45 @@ function renderLabelTags() {
 
 document.getElementById('back-btn').addEventListener('click', () => showSection('brand'));
 
+function selectMode(el) {
+  document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
+  el.classList.add('active');
+}
+
 document.getElementById('start-btn').addEventListener('click', async () => {
   if (!selectedBrand || brandLabels.length === 0) return;
   const btn = document.getElementById('start-btn');
   btn.disabled = true; btn.textContent = '提交中...';
-  const body = { brand: selectedBrand, labels: brandLabels, variants: parseInt(document.getElementById('variants-input').value) || 1, selection_mode: selectedMode };
+  const variants = parseInt(document.getElementById('variants-input').value, 10) || 1;
+  if (variants < 1 || variants > 10) {
+    showError('生成变体数量必须在 1 到 10 之间');
+    btn.disabled = false; btn.textContent = '开始剪辑';
+    return;
+  }
+  const body = { brand: selectedBrand, labels: brandLabels, variants };
   const goal = document.getElementById('goal-input').value.trim();
   if (goal) body.goal = goal;
+  const reviewCriteria = document.getElementById('review-criteria-input').value.trim();
+  if (reviewCriteria) body.review_criteria = reviewCriteria;
   body.unique_src_video = document.getElementById('unique-src-toggle').checked;
+  body.use_understanding = document.querySelector('.mode-option.active')?.dataset.value === 'asr+visual';
   try {
     const resp = await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '请求失败'); }
     const data = await resp.json();
     currentTaskId = data.id;
+    pollFailureCount = 0;
     document.getElementById('progress-title').textContent = `正在剪辑 - ${selectedBrand}`;
+    // Reset progress bar before showing progress section
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('stage-text').textContent = '准备中...';
+    document.querySelectorAll('.stage-tag').forEach(el => {
+      el.classList.remove('done', 'active');
+      // Hide visual stage tag when not using understanding mode
+      if (el.dataset.stage === 'visual') {
+        el.style.display = body.use_understanding ? '' : 'none';
+      }
+    });
     showSection('progress'); pollStatus();
   } catch (e) { showError(e.message); }
   finally { btn.disabled = false; btn.textContent = '开始剪辑'; }
@@ -685,12 +758,28 @@ async function pollStatus() {
   if (!currentTaskId) return;
   try {
     const resp = await fetch(`/api/tasks/${currentTaskId}`);
+    if (!resp.ok) {
+      // Task not found (e.g. server restarted) — stop polling
+      if (resp.status === 404) {
+        showError('任务丢失（服务器可能已重启），请重新提交');
+        return;
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
     const data = await resp.json();
-    updateProgress(data.stage, data.progress);
+    pollFailureCount = 0;
+    updateProgress(data.stage || 'starting', data.progress || 0);
     if (data.status === 'done') { showDone(data); return; }
     if (data.status === 'failed') { showError(data.error || '未知错误'); return; }
+    if (data.status === 'aborted') { showError('剪辑已中止'); return; }
     pollTimer = setTimeout(pollStatus, 1500);
-  } catch (e) { pollTimer = setTimeout(pollStatus, 3000); }
+  } catch (e) {
+    pollFailureCount += 1;
+    if (pollFailureCount >= 2) {
+      document.getElementById('stage-text').textContent = '连接中断，正在重试...';
+    }
+    pollTimer = setTimeout(pollStatus, 3000);
+  }
 }
 
 function showSection(name) {
@@ -703,7 +792,7 @@ function showSection(name) {
 
 function updateProgress(stage, pct) {
   document.getElementById('progress-bar').style.width = pct + '%';
-  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',visual:'视觉理解',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',visual:'视频理解',strategy:'策略生成',render:'视频渲染',complete:'完成'};
   document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
   document.querySelectorAll('.stage-tag').forEach(el => {
     const s = el.dataset.stage, order = ['starting','segments','transcripts','visual','strategy','render'];
@@ -714,19 +803,50 @@ function updateProgress(stage, pct) {
 
 function showDone(data) {
   showSection('done');
-  document.getElementById('download-btn').href = `/api/tasks/${currentTaskId}/download`;
-  document.getElementById('done-info').textContent = `品牌: ${data.brand} | 标签: ${data.labels.join('、')}`;
-  loadStorage(); // refresh token usage after task completes
+  const outputs = Array.isArray(data.outputs) ? data.outputs : [];
+  document.getElementById('done-info').textContent =
+    `品牌: ${data.brand} | 标签: ${(data.labels || []).join('、')} | 生成 ${outputs.length || 1} 个成品`;
+  const list = document.getElementById('download-list');
+  if (outputs.length > 1) {
+    list.innerHTML = outputs.map(item =>
+      `<a class="btn-download" href="${escapeHtml(item.url)}" style="margin:6px;">下载变体 ${Number(item.index) || ''}</a>`
+    ).join('');
+  } else {
+    const url = outputs[0]?.url || `/api/tasks/${currentTaskId}/download`;
+    list.innerHTML = `<a class="btn-download" href="${escapeHtml(url)}">下载视频</a>`;
+  }
 }
 
 function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
+
+async function abortTask() {
+  if (!currentTaskId) return;
+  const btn = document.getElementById('abort-btn');
+  btn.disabled = true; btn.textContent = '中止中...';
+  try {
+    const resp = await fetch(`/api/tasks/${currentTaskId}/abort`, { method: 'POST' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '中止失败'); }
+    showError('剪辑已中止');
+  } catch (e) { showError(e.message); }
+  finally { btn.disabled = false; btn.textContent = '中止剪辑'; }
+}
 
 function resetUI() {
   currentTaskId = null; selectedBrand = null; brandLabels = [];
   document.getElementById('variants-input').value = '1';
   document.getElementById('goal-input').value = '';
   document.getElementById('prompt-select').innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
-  selectMode('asr');
+  loadReviewCriteria();
+  document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
+  document.querySelector('.mode-option[data-value="asr"]').classList.add('active');
+  // Reset progress bar and stage tags
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('stage-text').textContent = '准备中...';
+  document.getElementById('download-list').innerHTML = '';
+  pollFailureCount = 0;
+  document.querySelectorAll('.stage-tag').forEach(el => {
+    el.classList.remove('done', 'active');
+  });
   showSection('brand'); loadBrands();
   if (pollTimer) clearTimeout(pollTimer);
 }
@@ -734,9 +854,20 @@ function resetUI() {
 // ==================== MANAGE PAGE ====================
 let manageExpandedBrand = null;
 
+function findBrandRow(brand) {
+  return [...document.querySelectorAll('.brand-row')].find(el => el.dataset.brand === brand);
+}
+
+function findBrandPanel(brand, type) {
+  return [...document.querySelectorAll('.file-panel')].find(
+    el => el.dataset.brand === brand && el.dataset.panelType === type
+  );
+}
+
 async function loadManageBrands() {
   try {
     const resp = await fetch('/api/brands');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const brands = await resp.json();
     const list = document.getElementById('manage-brand-list');
     list.innerHTML = '';
@@ -744,16 +875,16 @@ async function loadManageBrands() {
     brands.forEach(b => {
       const row = document.createElement('div');
       row.className = 'brand-row';
-      row.id = `brand-row-${b.name}`;
+      row.dataset.brand = b.name;
       row.innerHTML = `
         <div class="brand-row-left">
-          <span class="brand-row-name">${b.name}</span>
-          <span class="brand-row-meta">${b.video_count} 个视频${b.has_xlsx ? ' · 有切片方案' : ''}</span>
+          <span class="brand-row-name">${escapeHtml(b.name)}</span>
+          <span class="brand-row-meta">${Number(b.video_count) || 0} 个视频${b.has_xlsx ? ' · 有切片方案' : ''}</span>
         </div>
         <div class="brand-actions">
-          <button class="btn-icon" onclick="event.stopPropagation(); toggleFilePanel('${b.name}')">文件</button>
-          <button class="btn-icon" onclick="event.stopPropagation(); togglePromptPanel('${b.name}')">Prompt</button>
-          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteBrand('${b.name}')">删除</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); toggleFilePanel(${jsArg(b.name)})'>文件</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); togglePromptPanel(${jsArg(b.name)})'>Prompt</button>
+          <button class="btn-icon danger" onclick='event.stopPropagation(); deleteBrand(${jsArg(b.name)})'>删除</button>
         </div>
       `;
       row.onclick = () => toggleFilePanel(b.name);
@@ -761,13 +892,15 @@ async function loadManageBrands() {
 
       const panel = document.createElement('div');
       panel.className = 'file-panel';
-      panel.id = `file-panel-${b.name}`;
+      panel.dataset.panelType = 'files';
+      panel.dataset.brand = b.name;
       panel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
       list.appendChild(panel);
 
       const promptPanel = document.createElement('div');
       promptPanel.className = 'file-panel';
-      promptPanel.id = `prompt-panel-${b.name}`;
+      promptPanel.dataset.panelType = 'prompts';
+      promptPanel.dataset.brand = b.name;
       promptPanel.innerHTML = '<div style="color:#888; font-size:13px;">加载中...</div>';
       list.appendChild(promptPanel);
     });
@@ -781,8 +914,9 @@ async function loadManageBrands() {
 }
 
 async function toggleFilePanel(brand) {
-  const panel = document.getElementById(`file-panel-${brand}`);
-  const row = document.getElementById(`brand-row-${brand}`);
+  const panel = findBrandPanel(brand, 'files');
+  const row = findBrandRow(brand);
+  if (!panel || !row) return;
 
   if (manageExpandedBrand === brand) {
     panel.classList.remove('active');
@@ -793,8 +927,8 @@ async function toggleFilePanel(brand) {
 
   // Close previous
   if (manageExpandedBrand) {
-    const prev = document.getElementById(`file-panel-${manageExpandedBrand}`);
-    const prevRow = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    const prev = findBrandPanel(manageExpandedBrand, 'files');
+    const prevRow = findBrandRow(manageExpandedBrand);
     if (prev) prev.classList.remove('active');
     if (prevRow) prevRow.classList.remove('expanded');
   }
@@ -814,7 +948,8 @@ async function toggleFilePanel(brand) {
 }
 
 function renderFilePanel(brand, files) {
-  const panel = document.getElementById(`file-panel-${brand}`);
+  const panel = findBrandPanel(brand, 'files');
+  if (!panel) return;
   let html = '';
 
   files.forEach(f => {
@@ -822,11 +957,11 @@ function renderFilePanel(brand, files) {
     html += `
       <div class="file-row">
         <div>
-          <span class="file-name">${f.name}</span>
-          <span class="file-size">${f.size_mb} MB</span>
-          <span class="file-type ${typeClass}">${f.type}</span>
+          <span class="file-name">${escapeHtml(f.name)}</span>
+          <span class="file-size">${Number(f.size_mb) || 0} MB</span>
+          <span class="file-type ${typeClass}">${escapeHtml(f.type)}</span>
         </div>
-        <button class="btn-delete-file" onclick="deleteFile('${brand}', '${f.name}')" title="删除">&times;</button>
+        <button class="btn-delete-file" onclick='deleteFile(${jsArg(brand)}, ${jsArg(f.name)})' title="删除">&times;</button>
       </div>
     `;
   });
@@ -839,7 +974,7 @@ function renderFilePanel(brand, files) {
     <div class="upload-row">
       <label class="upload-btn">
         上传视频或切片方案 (.mp4 / .xlsx)
-        <input type="file" accept=".mp4,.mov,.avi,.mkv,.xlsx,.MP4,.MOV,.AVI,.MKV,.XLSX" onchange="uploadFile('${brand}', this)">
+        <input type="file" accept=".mp4,.mov,.avi,.mkv,.xlsx,.MP4,.MOV,.AVI,.MKV,.XLSX" onchange='uploadFile(${jsArg(brand)}, this)'>
       </label>
     </div>
   `;
@@ -882,8 +1017,9 @@ async function deleteFile(brand, filename) {
 let manageExpandedPrompt = null;
 
 async function togglePromptPanel(brand) {
-  const panel = document.getElementById(`prompt-panel-${brand}`);
-  const row = document.getElementById(`brand-row-${brand}`);
+  const panel = findBrandPanel(brand, 'prompts');
+  const row = findBrandRow(brand);
+  if (!panel || !row) return;
 
   if (manageExpandedPrompt === brand) {
     panel.classList.remove('active');
@@ -893,16 +1029,16 @@ async function togglePromptPanel(brand) {
   }
 
   if (manageExpandedPrompt) {
-    const prev = document.getElementById(`prompt-panel-${manageExpandedPrompt}`);
-    const prevRow = document.getElementById(`brand-row-${manageExpandedPrompt}`);
+    const prev = findBrandPanel(manageExpandedPrompt, 'prompts');
+    const prevRow = findBrandRow(manageExpandedPrompt);
     if (prev) prev.classList.remove('active');
     if (prevRow) prevRow.classList.remove('expanded');
   }
 
   // Close file panel too
   if (manageExpandedBrand) {
-    const fp = document.getElementById(`file-panel-${manageExpandedBrand}`);
-    const fr = document.getElementById(`brand-row-${manageExpandedBrand}`);
+    const fp = findBrandPanel(manageExpandedBrand, 'files');
+    const fr = findBrandRow(manageExpandedBrand);
     if (fp) fp.classList.remove('active');
     if (fr) fr.classList.remove('expanded');
     manageExpandedBrand = null;
@@ -922,19 +1058,20 @@ async function togglePromptPanel(brand) {
 }
 
 function renderPromptPanel(brand, prompts) {
-  const panel = document.getElementById(`prompt-panel-${brand}`);
+  const panel = findBrandPanel(brand, 'prompts');
+  if (!panel) return;
   let html = '';
 
   prompts.forEach(p => {
     html += `
-      <div class="file-row" style="align-items:flex-start;">
+      <div class="file-row" id="prompt-row-${p.id}" style="align-items:flex-start;">
         <div style="flex:1; min-width:0;">
-          <div style="font-weight:500; margin-bottom:4px;">${p.name}</div>
-          <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${p.content}</div>
+          <div style="font-weight:500; margin-bottom:4px;">${escapeHtml(p.name)}</div>
+          <div style="font-size:12px; color:#888; white-space:pre-wrap; word-break:break-all;">${escapeHtml(p.content)}</div>
         </div>
         <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
-          <button class="btn-icon" onclick="editPrompt('${brand}', '${p.id}', '${encodeURIComponent(p.name)}', '${encodeURIComponent(p.content)}')">编辑</button>
-          <button class="btn-icon danger" onclick="deletePrompt('${brand}', '${p.id}')">删除</button>
+          <button class="btn-icon" onclick='editPrompt(${jsArg(brand)}, ${jsArg(p.id)}, ${jsArg(p.name)}, ${jsArg(p.content)})'>编辑</button>
+          <button class="btn-icon danger" onclick='deletePrompt(${jsArg(brand)}, ${jsArg(p.id)})'>删除</button>
         </div>
       </div>`;
   });
@@ -946,17 +1083,18 @@ function renderPromptPanel(brand, prompts) {
   html += `
     <div style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
       <div style="font-size:13px; color:#aaa; margin-bottom:8px;">添加新 Prompt</div>
-      <input class="form-input" id="new-prompt-name-${brand}" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
-      <textarea class="form-input" id="new-prompt-content-${brand}" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
-      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick="addPrompt('${brand}')">添加</button>
+      <input class="form-input" data-role="new-prompt-name" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
+      <textarea class="form-input" data-role="new-prompt-content" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='addPrompt(${jsArg(brand)})'>添加</button>
     </div>`;
 
   panel.innerHTML = html;
 }
 
 async function addPrompt(brand) {
-  const name = document.getElementById(`new-prompt-name-${brand}`).value.trim();
-  const content = document.getElementById(`new-prompt-content-${brand}`).value.trim();
+  const panel = findBrandPanel(brand, 'prompts');
+  const name = panel?.querySelector('[data-role="new-prompt-name"]')?.value.trim() || '';
+  const content = panel?.querySelector('[data-role="new-prompt-content"]')?.value.trim() || '';
   if (!name || !content) { alert('名称和内容不能为空'); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`, {
@@ -969,26 +1107,44 @@ async function addPrompt(brand) {
   } catch (e) { alert('添加失败: ' + e.message); }
 }
 
-function editPrompt(brand, pid, encName, encContent) {
-  const name = decodeURIComponent(encName);
-  const content = decodeURIComponent(encContent);
-  const newName = prompt('Prompt 名称', name);
-  if (newName === null) return;
-  const newContent = prompt('Prompt 内容', content);
-  if (newContent === null) return;
-  fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
-    method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ name: newName, content: newContent })
-  }).then(() => {
+function editPrompt(brand, pid, name, content) {
+  const row = document.getElementById(`prompt-row-${pid}`);
+  if (!row) return;
+  row.innerHTML = `
+    <div style="flex:1; min-width:0;">
+      <input class="form-input" id="edit-prompt-name-${pid}" value="${escapeHtml(name)}" style="margin-bottom:6px; font-size:13px;">
+      <textarea class="form-input" id="edit-prompt-content-${pid}" rows="4" style="font-size:13px;">${escapeHtml(content)}</textarea>
+    </div>
+    <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px; align-self:flex-end;">
+      <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='savePrompt(${jsArg(brand)}, ${jsArg(pid)})'>保存</button>
+      <button class="btn-sm" style="background:#333;color:#ccc;" onclick='togglePromptPanel(${jsArg(brand)}); setTimeout(() => togglePromptPanel(${jsArg(brand)}), 100);'>取消</button>
+    </div>`;
+  document.getElementById(`edit-prompt-content-${pid}`).focus();
+}
+
+async function savePrompt(brand, pid) {
+  const nameEl = document.getElementById(`edit-prompt-name-${pid}`);
+  const contentEl = document.getElementById(`edit-prompt-content-${pid}`);
+  if (!nameEl || !contentEl) return;
+  const newName = nameEl.value.trim();
+  const newContent = contentEl.value.trim();
+  if (!newName || !newContent) { alert('名称和内容不能为空'); return; }
+  try {
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: newName, content: newContent })
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
-  }).catch(e => alert('编辑失败: ' + e.message));
+  } catch (e) { alert('编辑失败: ' + e.message); }
 }
 
 async function deletePrompt(brand, pid) {
   if (!confirm('确定删除此 Prompt？')) return;
   try {
-    await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
   } catch (e) { alert('删除失败: ' + e.message); }
@@ -1043,35 +1199,13 @@ async function loadStorage() {
     const d = await resp.json();
     _renderStorageBar('storage-inputs', d.inputs.used_mb, d.inputs.limit_mb, '素材');
     _renderStorageBar('storage-output', d.output.used_mb, d.output.limit_mb, '成品');
-    if (d.tokens) _renderTokenBar('token-usage-bar', d.tokens.used, d.tokens.limit, d.tokens.api_calls);
   } catch (e) { console.error('loadStorage failed', e); }
-}
-
-function _formatTokens(n) {
-  if (n >= 100000000) return (n / 100000000).toFixed(1) + ' 亿';
-  if (n >= 10000) return (n / 10000).toFixed(1) + ' 万';
-  return n.toLocaleString();
-}
-
-function _renderTokenBar(containerId, used, limit, calls) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-  const cls = pct >= 90 ? 'full' : pct >= 70 ? 'warn' : 'ok';
-  const usedStr = _formatTokens(used);
-  const limitStr = '400 亿';
-  const callsStr = calls ? ` (${calls} 次调用)` : '';
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
-      <span>Token 用量</span><span class="bar-value">${usedStr} / ${limitStr} tokens${callsStr}</span>
-    </div>
-    <div class="bar-row">
-      <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
-    </div>`;
 }
 
 // ==================== PROMPTS ====================
 let brandPrompts = [];
+let brandReviewCriteria = [];
+let defaultReviewCriteria = '';
 
 async function loadPrompts(brand) {
   try {
@@ -1080,7 +1214,10 @@ async function loadPrompts(brand) {
     const sel = document.getElementById('prompt-select');
     sel.innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
     brandPrompts.forEach(p => {
-      sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
     });
   } catch (e) { console.error('loadPrompts failed', e); }
 }
@@ -1092,15 +1229,116 @@ function applyPrompt() {
   if (p) document.getElementById('goal-input').value = p.content;
 }
 
+async function loadReviewCriteria() {
+  const status = document.getElementById('review-criteria-status');
+  if (status) status.textContent = '正在加载默认 Review 标准...';
+  try {
+    const resp = await fetch('/api/review/criteria');
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
+    brandReviewCriteria = await resp.json();
+    const sel = document.getElementById('review-criteria-select');
+    sel.innerHTML = '';
+    brandReviewCriteria.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.name;
+      sel.appendChild(opt);
+    });
+    const defaultItem = brandReviewCriteria.find(item => item.id === '__default__') || brandReviewCriteria[0];
+    defaultReviewCriteria = defaultItem ? defaultItem.content : '';
+    if (defaultItem) {
+      sel.value = defaultItem.id;
+      document.getElementById('review-criteria-input').value = defaultItem.content;
+    }
+    if (status) status.textContent = `已加载 ${brandReviewCriteria.length} 个 Review 标准`;
+  } catch (e) {
+    console.error('loadReviewCriteria failed', e);
+    if (status) status.textContent = 'Review 标准加载失败：' + e.message;
+  }
+}
+
+function applyReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (item) document.getElementById('review-criteria-input').value = item.content;
+}
+
+function resetReviewCriteria() {
+  const sel = document.getElementById('review-criteria-select');
+  sel.value = '__default__';
+  document.getElementById('review-criteria-input').value = defaultReviewCriteria;
+}
+
+async function saveCurrentReviewCriteria() {
+  const content = document.getElementById('review-criteria-input').value.trim();
+  if (!content) { alert('Review 标准不能为空'); return; }
+  const name = prompt('请输入 Review 标准名称，例如：高连贯性广告审核');
+  if (!name || !name.trim()) return;
+  try {
+    const resp = await fetch('/api/review/criteria', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name.trim(), content }),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '保存失败'); }
+    const saved = await resp.json();
+    await loadReviewCriteria();
+    document.getElementById('review-criteria-select').value = saved.id;
+    applyReviewCriteria();
+  } catch (e) { alert('保存 Review 标准失败: ' + e.message); }
+}
+
+async function updateCurrentReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (!item || item.readonly || pid === '__default__') {
+    alert('默认 Review 标准不能更新，请先保存为新的预设');
+    return;
+  }
+  const content = document.getElementById('review-criteria-input').value.trim();
+  if (!content) { alert('Review 标准不能为空'); return; }
+  try {
+    const resp = await fetch(`/api/review/criteria/${pid}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: item.name, content }),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '更新失败'); }
+    await loadReviewCriteria();
+    document.getElementById('review-criteria-select').value = pid;
+    applyReviewCriteria();
+  } catch (e) { alert('更新 Review 标准失败: ' + e.message); }
+}
+
+async function deleteCurrentReviewCriteria() {
+  const pid = document.getElementById('review-criteria-select').value;
+  const item = brandReviewCriteria.find(x => x.id === pid);
+  if (!item || item.readonly || pid === '__default__') {
+    alert('默认 Review 标准不能删除');
+    return;
+  }
+  if (!confirm(`确定删除 Review 标准「${item.name}」吗？`)) return;
+  try {
+    const resp = await fetch(`/api/review/criteria/${pid}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
+    await loadReviewCriteria();
+  } catch (e) { alert('删除 Review 标准失败: ' + e.message); }
+}
+
 // ==================== OUTPUT PAGE ====================
 async function loadOutputBrandSelect() {
   const resp = await fetch('/api/brands');
+  if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
   const brands = await resp.json();
   const sel = document.getElementById('output-brand-select');
   const current = sel.value;
   sel.innerHTML = '<option value="">选择品牌查看成品</option>';
   brands.forEach(b => {
-    sel.innerHTML += `<option value="${b.name}" ${b.name === current ? 'selected' : ''}>${b.name}</option>`;
+    const opt = document.createElement('option');
+    opt.value = b.name;
+    opt.textContent = b.name;
+    if (b.name === current) opt.selected = true;
+    sel.appendChild(opt);
   });
   if (sel.value) loadOutputs();
 }
@@ -1111,7 +1349,8 @@ async function loadOutputs() {
   if (!brand) { list.innerHTML = ''; return; }
 
   try {
-    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`);
+    const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs`, {cache: 'no-cache'});
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
     const outputs = await resp.json();
 
     if (outputs.length === 0) {
@@ -1129,15 +1368,15 @@ async function loadOutputs() {
       header.className = 'output-header';
       header.innerHTML = `
         <div>
-          <span class="output-name">${v.name}</span>
-          <span class="output-size">${v.size_mb} MB</span>
-          <span class="output-time">${v.created_at || ''}</span>
+          <span class="output-name">${escapeHtml(v.name)}</span>
+          <span class="output-size">${Number(v.size_mb) || 0} MB</span>
+          <span class="output-time">${escapeHtml(v.created_at || '')}</span>
           ${v.feedback ? '<span class="plan-role" style="background:#1a3c2a;color:#4caf50;margin-left:8px;">已评价</span>' : ''}
         </div>
         <div class="output-actions">
           <button class="btn-icon" onclick="event.stopPropagation(); window.open('/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(v.name)}/download')">下载</button>
-          <button class="btn-icon" onclick="event.stopPropagation(); renameOutput('${brand}', '${v.name}')">重命名</button>
-          <button class="btn-icon danger" onclick="event.stopPropagation(); deleteOutput('${brand}', '${v.name}')">删除</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); renameOutput(${jsArg(brand)}, ${jsArg(v.name)})'>重命名</button>
+          <button class="btn-icon danger" onclick='event.stopPropagation(); deleteOutput(${jsArg(brand)}, ${jsArg(v.name)})'>删除</button>
         </div>
       `;
       header.onclick = () => toggleOutputBody(idx);
@@ -1151,24 +1390,28 @@ async function loadOutputs() {
       // Edit plan
       let planHtml = '';
       if (v.plan && Array.isArray(v.plan) && v.plan.length > 0) {
-        planHtml = `
-          <div style="margin-bottom:12px;">
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>
-            <table class="plan-table">
-              <tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>
-              ${v.plan.map((item, i) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td>${item.video_id || '-'}</td>
-                  <td>${fmtTime(item.start)} - ${fmtTime(item.end)}</td>
-                  <td>${(item.duration || (item.end - item.start)).toFixed(1)}s</td>
-                  <td><span class="plan-role">${item.label || '-'}</span></td>
-                  <td class="plan-reason">${item.reason || '-'}</td>
-                </tr>
-              `).join('')}
-            </table>
-          </div>
-        `;
+        try {
+          const rows = v.plan.map((item, i) => {
+            const dur = (item.duration || (item.end - item.start));
+            const durStr = (typeof dur === 'number' && !isNaN(dur)) ? dur.toFixed(1) + 's' : '-';
+            return '<tr>'
+              + '<td>' + (i + 1) + '</td>'
+              + '<td>' + escapeHtml(item.video_id || '-') + '</td>'
+              + '<td>' + fmtTime(item.start) + ' - ' + fmtTime(item.end) + '</td>'
+              + '<td>' + durStr + '</td>'
+              + '<td><span class="plan-role">' + escapeHtml(item.label || '-') + '</span></td>'
+              + '<td class="plan-reason">' + escapeHtml(item.reason || '-') + '</td>'
+              + '</tr>';
+          }).join('');
+          planHtml = '<div style="margin-bottom:12px;">'
+            + '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>'
+            + '<table class="plan-table">'
+            + '<tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>'
+            + rows
+            + '</table></div>';
+        } catch (planErr) {
+          planHtml = '<div style="color:#ff6b6b;font-size:13px;">剪辑方案渲染出错: ' + planErr.message + '</div>';
+        }
       } else {
         planHtml = '<div style="color:#666;font-size:13px;margin-bottom:12px;">无剪辑方案数据</div>';
       }
@@ -1185,11 +1428,11 @@ async function loadOutputs() {
             ${[1,2,3,4,5].map(n => `<button class="star ${n <= (fb.rating||0) ? 'filled' : ''}" onclick="setRating(${idx},${n})">&#9733;</button>`).join('')}
           </div>
           <div class="feedback-tags" id="fbtags-${idx}">
-            ${fbTags.map(t => `<span class="feedback-tag ${selectedTags.includes(t) ? 'selected' : ''}" onclick="toggleFbTag(this)" data-tag="${t}">${t}</span>`).join('')}
+            ${fbTags.map(t => `<span class="feedback-tag ${selectedTags.includes(t) ? 'selected' : ''}" onclick="toggleFbTag(this)" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('')}
           </div>
-          <textarea class="feedback-textarea" id="fbtext-${idx}" placeholder="输入对这个视频的意见和建议...">${fb.comment || ''}</textarea>
+          <textarea class="feedback-textarea" id="fbtext-${idx}" placeholder="输入对这个视频的意见和建议...">${escapeHtml(fb.comment || '')}</textarea>
           <div style="display:flex;align-items:center;gap:12px;">
-            <button class="btn-feedback" onclick="submitFeedback('${brand}', '${v.name}', ${idx})">提交反馈</button>
+            <button class="btn-feedback" onclick='submitFeedback(${jsArg(brand)}, ${jsArg(v.name)}, ${idx})'>提交反馈</button>
             <span class="feedback-saved" id="fbsaved-${idx}">已保存</span>
           </div>
         </div>
@@ -1244,9 +1487,30 @@ async function submitFeedback(brand, filename, idx) {
   }
 }
 
-async function renameOutput(brand, oldName) {
-  const newName = prompt('输入新名称:', oldName);
-  if (!newName || newName === oldName) return;
+function renameOutput(brand, oldName) {
+  // Find the output card containing this button
+  const cards = document.querySelectorAll('.output-card');
+  for (const card of cards) {
+    const nameSpan = card.querySelector('.output-name');
+    if (nameSpan && nameSpan.textContent === oldName) {
+      const actions = card.querySelector('.output-actions');
+      if (!actions) return;
+      actions.innerHTML = `
+        <input class="form-input" id="rename-output-input" value="${escapeHtml(oldName)}" style="width:200px; padding:6px 10px; font-size:13px;">
+        <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='saveRename(${jsArg(brand)}, ${jsArg(oldName)})'>保存</button>
+        <button class="btn-sm" style="background:#333;color:#ccc;" onclick="loadOutputs()">取消</button>`;
+      document.getElementById('rename-output-input').focus();
+      document.getElementById('rename-output-input').select();
+      break;
+    }
+  }
+}
+
+async function saveRename(brand, oldName) {
+  const input = document.getElementById('rename-output-input');
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName || newName === oldName) { loadOutputs(); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(oldName)}`, {
       method: 'PUT',
@@ -1257,6 +1521,7 @@ async function renameOutput(brand, oldName) {
     loadOutputs();
   } catch (e) {
     alert('重命名失败: ' + e.message);
+    loadOutputs();
   }
 }
 

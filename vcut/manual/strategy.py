@@ -1,18 +1,24 @@
-﻿"""Manual label-based strategy generation for MVP flow."""
+"""Manual label-based strategy generation for MVP flow."""
 
 from __future__ import annotations
 
 import json
 import logging
-
-logger = logging.getLogger(__name__)
 import os
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import Callable
 
+logger = logging.getLogger(__name__)
+
 from vcut.core.config import DEFAULT_MODEL_NAMES
+from vcut.manual.goal import default_structured_goal, normalize_goal_with_llm
+from vcut.manual.prompt_loader import load_manual_prompt
+from vcut.manual.quality import validate_manual_selection
+from vcut.manual.reviewer import review_manual_edit_plan
 from vcut.manual.segments import normalize_manual_label
+from vcut.manual.visual_payload import build_visual_payload
 from vcut.stages.strategy import _call_openai_chat, _parse_json_robust
 
 
@@ -87,55 +93,38 @@ def _build_plan_from_selected_segments(
     return plan
 
 
-def _build_deterministic_selection(
-    segments: list[dict],
-    labels: list[str],
-    *,
-    variant_index: int,
-) -> list[dict]:
-    grouped = _group_by_label(segments)
-    selected: list[dict] = []
-    for label_idx, label in enumerate(labels):
-        candidates = grouped.get(label, [])
-        if not candidates:
-            raise ValueError(f"No segments found for label: {label}")
-        pick = candidates[(variant_index + label_idx) % len(candidates)]
-        selected.append(pick)
-    return selected
-
-
 def _build_llm_candidates(
     segments: list[dict],
     labels: list[str],
-) -> tuple[dict[str, list[dict]], bool]:
+) -> dict[str, list[dict]]:
     grouped = _group_by_label(segments)
     payload: dict[str, list[dict]] = {}
-    has_visual = False
     for label in labels:
         candidates = grouped.get(label, [])
         if not candidates:
             raise ValueError(f"No segments found for label: {label}")
-        items = []
-        for item in candidates:
-            scene_summary = str(item.get("scene_summary", "")).strip()
-            visual_tags = item.get("visual_tags", [])
-            if scene_summary:
-                has_visual = True
-            entry = {
-                "segment_id": str(item.get("segment_id", "")),
-                "src_video": str(item.get("src_video", "")),
-                "start": float(item.get("start", 0.0)),
-                "end": float(item.get("end", 0.0)),
-                "duration": float(item.get("duration", 0.0)),
-                "transcript_text": str(item.get("transcript_text", "")).strip(),
-            }
-            if scene_summary:
-                entry["scene_summary"] = scene_summary
-            if visual_tags:
-                entry["visual_tags"] = visual_tags
-            items.append(entry)
-        payload[label] = items
-    return payload, has_visual
+        payload[label] = [_candidate_entry(item) for item in candidates]
+    return payload
+
+
+def _candidate_entry(item: dict) -> dict:
+    """Build a single candidate entry for the LLM prompt."""
+    entry = {
+        "segment_id": str(item.get("segment_id", "")),
+        "src_video": str(item.get("src_video", "")),
+        "start": float(item.get("start", 0.0)),
+        "end": float(item.get("end", 0.0)),
+        "duration": float(item.get("duration", 0.0)),
+        "transcript_text": str(item.get("transcript_text", "")).strip(),
+    }
+    multimodal = str(item.get("multimodal_summary", "")).strip()
+    if multimodal:
+        entry["multimodal_summary"] = multimodal
+
+    visual = item.get("visual_description", {})
+    if isinstance(visual, dict) and visual:
+        entry["visual"] = build_visual_payload(visual)
+    return entry
 
 
 def _select_with_llm(
@@ -143,11 +132,14 @@ def _select_with_llm(
     labels: list[str],
     *,
     llm_goal: str | None,
+    structured_goal: dict,
     llm_model_name: str | None,
     llm_api_key_env: str | None,
     llm_endpoint: str | None,
     prior_plans: list[list[dict]] | None = None,
     unique_src_video: bool = False,
+    retry_feedback: str | None = None,
+    used_combinations: list[list[str]] | None = None,
 ) -> list[dict]:
     api_key_env = str(llm_api_key_env or "").strip() or "OPENAI_API_KEY"
     api_key = os.getenv(api_key_env, "").strip()
@@ -155,7 +147,7 @@ def _select_with_llm(
         raise RuntimeError(f"{api_key_env} is required for --manual-use-asr-llm.")
     endpoint = str(llm_endpoint or "").strip() or os.getenv("OPENAI_BASE_URL", "").strip() or "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 
-    candidates_by_label, has_visual = _build_llm_candidates(segments, labels)
+    candidates_by_label = _build_llm_candidates(segments, labels)
     avoid_segment_ids: list[str] = []
     for plan in prior_plans or []:
         avoid_segment_ids.extend(
@@ -164,7 +156,6 @@ def _select_with_llm(
             if str(item.get("segment_id", "")).strip()
         )
     model_name = str(llm_model_name or "").strip() or DEFAULT_MODEL_NAMES["strategy"]
-    goal = str(llm_goal or "").strip() or "Select the most coherent dialogue flow."
     avoid_set = set(avoid_segment_ids)
     for lbl in list(candidates_by_label.keys()):
         candidates_by_label[lbl] = [
@@ -174,52 +165,70 @@ def _select_with_llm(
             raise RuntimeError(f"No more unique candidates available for label: {lbl}")
 
     prompt = {
-        "goal": goal,
+        "structured_goal": structured_goal,
         "labels_in_order": labels,
         "candidates_by_label": candidates_by_label,
     }
 
-    system_content = (
-        "You are an expert video editor. Return strict JSON only.\n\n"
-        "## Task\n"
-        "Select exactly one video segment per label, in the exact label order provided.\n\n"
-        "## Selection Criteria\n"
-        "1. Dialogue coherence across adjacent segments is the top priority.\n"
-        "2. Prefer segments with clear transitions between consecutive labels.\n"
-        "3. Choose segments that best serve the user's goal.\n"
-    )
+    system_content = load_manual_prompt("selector_system.zh.md")
 
+    # Add visual understanding instructions if data is present
+    has_visual = any(
+        c.get("visual") or c.get("multimodal_summary")
+        for lbl in candidates_by_label.values()
+        for c in lbl
+    )
     if has_visual:
         system_content += (
-            "4. Use scene_summary and visual_tags to verify visual content matches label semantics.\n"
-            "5. Prefer segments with richer visual descriptions and diverse visual tags.\n"
-            "6. Avoid segments with empty or generic scene descriptions when better alternatives exist.\n"
+            "\n## 视觉理解信息\n"
+            "每个候选片段可能包含 'visual' 和 'multimodal_summary'，其中包括：\n"
+            # "- energy：high/medium/low，表示画面能量和视觉强度。\n"
+            "- opening/closing：首帧和尾帧描述。\n"
+            "- style：拍摄风格，例如俯拍产品、手持 vlog 等。\n"
+            "- mood：画面情绪。\n"
+            "- shot_type/main_subject/action：镜头类型、主体和正在发生的动作。\n"
+            "- product_presence：产品是否可见，可能为 none/partial/clear/unknown。\n"
+            "- transition_in/transition_out/continuity_notes：用于判断相邻片段衔接的描述性线索。\n"
+            "- text_overlays 和 scene_cut_points：屏幕文字与片段内部画面转折点。\n"
+            "- roles：建议承担的叙事角色，例如 hook/setup/demo/proof/closing。\n"
+            "- quality：1-10 分的视觉质量分。\n\n"
+            "使用视觉信息时请遵守：\n"
+            # "1. 开场 hook 优先选择高能量、开头画面抓人的片段。\n"
+            "1. 保证相邻片段的视觉风格尽量一致或有自然过渡。\n"
+            "2. 让画面情绪匹配整体叙事弧线。\n"
+            "3. 产品露出应与台词中的产品相关时刻对齐，但不要过滤掉无产品露出的铺垫、桥接或上下文片段。\n"
+            "4. 利用 transition_in/transition_out 选择更顺滑的相邻组合。\n"
+            "5. 检查上一段尾帧到下一段首帧的视觉连续性。\n"
         )
-
-    system_content += (
-        "\n## Output Format\n"
-        'Return a JSON object with key "items", an array where each element has:\n'
-        '- "label": the label string (must match input order exactly)\n'
-        '- "segment_id": the selected segment\'s ID\n'
-        '- "reason": explanation in Chinese (先分析约束条件，再说明选择理由)\n'
-    )
 
     if unique_src_video:
         system_content += (
-            "\n## CRITICAL Rule: Source Video Uniqueness\n"
-            "Each selected segment MUST come from a unique src_video.\n\n"
-            "You MUST plan your src_video assignments FIRST, then select segments.\n"
-            "Follow this exact order in your JSON output:\n"
-            '1. FIRST output "chosen_src_videos": an array listing the src_video you will use for each label, in label order. All values must be unique.\n'
-            '2. THEN output "items": select a segment whose src_video matches the corresponding entry in chosen_src_videos.\n\n'
-            "Process:\n"
-            "- For each label, list all available src_video values from the candidates.\n"
-            "- Assign a unique src_video to each label, prioritizing dialogue coherence.\n"
-            "- Write the assignments into chosen_src_videos.\n"
-            "- Then find a segment matching each assignment.\n\n"
-            'If you cannot find a valid assignment, return {"error": "reason"} instead.\n'
+            "\n## 关键规则：来源视频唯一性\n"
+            "每个被选中的片段都必须来自不同的 src_video。\n\n"
+            "你必须先规划 src_video 分配，再选择具体片段。\n"
+            "JSON 输出必须严格按以下顺序组织：\n"
+            '1. 先输出 "chosen_src_videos"：数组，按标签顺序列出每个标签使用的 src_video，所有值必须唯一。\n'
+            '2. 再输出 "items"：每个被选片段的 src_video 必须与 chosen_src_videos 对应位置一致。\n\n'
+            "执行步骤：\n"
+            "- 对每个标签，先查看候选片段里所有可用的 src_video。\n"
+            "- 在优先保证台词连贯的前提下，为每个标签分配唯一的 src_video。\n"
+            "- 把分配结果写入 chosen_src_videos。\n"
+            "- 再为每个标签寻找匹配该 src_video 的片段。\n\n"
+            '如果无法找到有效分配，请返回 {"error": "原因"}。\n'
         )
 
+    if used_combinations:
+        combo_lines = [", ".join(combo) for combo in used_combinations]
+        system_content += (
+            "\n\n## 关键规则：不要重复历史组合\n"
+            "以下 segment_id 组合已经生成过成片。\n"
+            "你不能再次输出完全相同的组合，必须选择不同片段。\n\n"
+        )
+        for i, line in enumerate(combo_lines, 1):
+            system_content += f"  {i}. [{line}]\n"
+
+    if retry_feedback:
+        system_content += "\n\n## 重要：上一次尝试失败\n" + retry_feedback
     messages = [
         {"role": "system", "content": system_content},
         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
@@ -238,10 +247,10 @@ def _select_with_llm(
         raise RuntimeError("Manual LLM selector did not return a valid list.")
 
     by_id = {str(item.get("segment_id", "")): item for item in segments}
-    # Build per-label valid segment_id set for fallback
-    label_valid_ids: dict[str, list[dict]] = {}
-    for lbl, cands in candidates_by_label.items():
-        label_valid_ids[lbl] = cands
+    # 建立标准化的 segment_id 查找表，解决 Unicode 编码不一致问题
+    def _norm_id(s: str) -> str:
+        return unicodedata.normalize("NFC", s.strip())
+    by_id_norm = {_norm_id(k): v for k, v in by_id.items()}
 
     selected: list[dict] = []
     for idx, label in enumerate(labels):
@@ -252,17 +261,10 @@ def _select_with_llm(
         if picked_label != label:
             raise RuntimeError("Manual LLM selector label order mismatch.")
         segment_id = str(record.get("segment_id", "")).strip()
-        segment = by_id.get(segment_id)
+        segment = by_id.get(segment_id) or by_id_norm.get(_norm_id(segment_id))
         if not segment:
-            # LLM picked invalid segment_id — fallback to first candidate for this label
-            cands = label_valid_ids.get(label, [])
-            if cands:
-                fallback = cands[0]
-                segment = by_id.get(str(fallback.get("segment_id", "")))
-                logger.warning("[llm-select] invalid segment_id '%s' for label '%s', fallback to '%s'", segment_id, label, fallback.get("segment_id"))
-            if not segment:
-                raise RuntimeError(f"Manual LLM selector picked unknown segment_id: {segment_id}")
-
+            raise RuntimeError(f"Manual LLM selector picked unknown segment_id: {segment_id}")
+        
         enriched = dict(segment)
         enriched["llm_reason"] = str(record.get("reason", ""))
         selected.append(enriched)
@@ -385,33 +387,6 @@ def enforce_not_identical_to_source(
     return adjusted
 
 
-def build_manual_edit_plan(
-    segments: list[dict],
-    labels: list[str],
-    *,
-    variant_index: int = 0,
-    max_total_duration: float | None = None,
-) -> list[dict]:
-    """Build a deterministic edit plan by label sequence."""
-    normalized_labels = [
-        normalize_manual_label(str(label).strip())
-        for label in labels
-        if str(label).strip()
-    ]
-    if not normalized_labels:
-        raise ValueError("labels cannot be empty in manual mode.")
-    chosen = _build_deterministic_selection(
-        segments=segments,
-        labels=normalized_labels,
-        variant_index=variant_index,
-    )
-    plan = _build_plan_from_selected_segments(chosen, max_total_duration=max_total_duration)
-
-    if not plan:
-        raise ValueError("Manual strategy produced empty plan.")
-    return enforce_not_identical_to_source(plan)
-
-
 def build_manual_edit_plans(
     segments: list[dict],
     labels: list[str],
@@ -424,8 +399,22 @@ def build_manual_edit_plans(
     llm_api_key_env: str | None = None,
     llm_endpoint: str | None = None,
     unique_src_video: bool = False,
+    variant_offset: int = 0,
+    prior_plans: list[list[dict]] | None = None,
+    used_combinations: list[list[str]] | None = None,
+    quality_config: dict | None = None,
+    review_config: dict | None = None,
+    review_log: list[dict] | None = None,
 ) -> list[list[dict]]:
-    """Build one or more plans using rotated deterministic picks."""
+    """Build one or more plans using LLM selection and review.
+
+    Args:
+        variant_offset: Starting variant index for retry bookkeeping.
+        prior_plans: Previously generated plans (from this or prior batches).
+            Passed to LLM to avoid re-selecting the same segments.
+        used_combinations: Historical segment_id combinations from used_plan_signatures.txt.
+            Passed to LLM prompt so it avoids repeating exact same combinations.
+    """
     count = max(1, int(variants))
     normalized_labels = [
         normalize_manual_label(str(label).strip())
@@ -434,41 +423,108 @@ def build_manual_edit_plans(
     ]
     if not normalized_labels:
         raise ValueError("labels cannot be empty in manual mode.")
+    if not use_llm:
+        raise RuntimeError(
+            "Manual edit plan generation requires LLM selection; deterministic non-LLM selection has been removed."
+        )
 
+    try:
+        structured_goal = normalize_goal_with_llm(
+            llm_goal,
+            llm_model_name=llm_model_name,
+            llm_api_key_env=llm_api_key_env,
+            llm_endpoint=llm_endpoint,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Goal normalization failed; using default structured goal: %s", exc)
+        structured_goal = default_structured_goal(llm_goal)
+    avoid_plans: list[list[dict]] = list(prior_plans or [])
     plans: list[list[dict]] = []
     for idx in range(count):
+        variant_index = variant_offset + idx
         if use_llm:
-            try:
-                chosen = _select_with_llm(
-                    segments=segments,
-                    labels=normalized_labels,
-                    llm_goal=llm_goal,
-                    llm_model_name=llm_model_name,
-                    llm_api_key_env=llm_api_key_env,
-                    llm_endpoint=llm_endpoint,
-                    prior_plans=plans,
-                    unique_src_video=unique_src_video,
-                )
-                plan = _build_plan_from_selected_segments(
-                    selected=chosen,
-                    max_total_duration=max_total_duration,
-                )
-                plan = enforce_not_identical_to_source(plan)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("LLM generation failed, falling back to deterministic plan: %s", e, exc_info=True)
-                plan = build_manual_edit_plan(
-                    segments=segments,
-                    labels=normalized_labels,
-                    variant_index=idx,
-                    max_total_duration=max_total_duration,
-                )
-        else:
-            plan = build_manual_edit_plan(
-                segments=segments,
-                labels=normalized_labels,
-                variant_index=idx,
-                max_total_duration=max_total_duration,
-            )
+            max_retries = 2
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    feedback = None
+                    if last_error:
+                        feedback = (
+                            f"你上一次的选片违反了约束：{last_error}\n"
+                            "请通过选择不同片段来修复。"
+                            "优先保证相邻片段台词顺滑，避免重复话术，"
+                            "不要让所有标签都来自同一个来源视频，"
+                            "并满足任何明确的来源视频唯一性要求。"
+                        )
+                    chosen = _select_with_llm(
+                        segments=segments,
+                        labels=normalized_labels,
+                        llm_goal=llm_goal,
+                        structured_goal=structured_goal,
+                        llm_model_name=llm_model_name,
+                        llm_api_key_env=llm_api_key_env,
+                        llm_endpoint=llm_endpoint,
+                        prior_plans=avoid_plans + plans,
+                        unique_src_video=unique_src_video,
+                        retry_feedback=feedback,
+                        used_combinations=used_combinations,
+                    )
+                    quality_issues = validate_manual_selection(
+                        chosen,
+                        labels=normalized_labels,
+                        quality_config=quality_config,
+                        unique_src_video=unique_src_video,
+                    )
+                    if quality_issues:
+                        raise ValueError("; ".join(quality_issues))
+                    plan = _build_plan_from_selected_segments(
+                        selected=chosen,
+                        max_total_duration=max_total_duration,
+                    )
+                    plan = enforce_not_identical_to_source(plan)
+                    review = review_manual_edit_plan(
+                        selected=chosen,
+                        edit_plan=plan,
+                        labels=normalized_labels,
+                        goal=llm_goal,
+                        structured_goal=structured_goal,
+                        review_config=review_config,
+                        llm_model_name=llm_model_name,
+                        llm_api_key_env=llm_api_key_env,
+                        llm_endpoint=llm_endpoint,
+                    )
+                    if review_log is not None:
+                        review_log.append(
+                            {
+                                "status": "approved" if review.get("approved") else "rejected",
+                                "variant_index": variant_index,
+                                "selected_segment_ids": [
+                                    str(segment.get("segment_id", "")) for segment in chosen
+                                ],
+                                "edit_plan": plan,
+                                "review": review,
+                            }
+                        )
+                    if not bool(review.get("approved", False)):
+                        issues = review.get("issues", [])
+                        if isinstance(issues, list):
+                            issue_text = "; ".join(str(issue) for issue in issues if str(issue).strip())
+                        else:
+                            issue_text = str(issues)
+                        feedback = str(review.get("retry_feedback", "")).strip()
+                        raise ValueError(feedback or issue_text or "LLM reviewer rejected the edit plan.")
+                    last_error = None
+                    break
+                except Exception as e:  # noqa: BLE001
+                    last_error = str(e)
+                    logger.warning("LLM attempt %d/%d failed: %s", attempt + 1, max_retries + 1, e)
+                    if attempt < max_retries:
+                        logger.info("Retrying with feedback...")
+                        continue
+                    logger.error("LLM failed after %d attempts, not falling back.", max_retries + 1)
+                    raise RuntimeError(
+                        f"LLM 选片失败（已重试 {max_retries + 1} 次）：{last_error}"
+                    ) from e
         plans.append(plan)
     return plans
 

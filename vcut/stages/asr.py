@@ -1,4 +1,4 @@
-﻿"""ASR utilities with Doubao Flash provider only."""
+"""ASR utilities — Doubao Flash provider for manual mode."""
 
 from __future__ import annotations
 
@@ -15,21 +15,14 @@ from typing import Any
 import requests
 
 from vcut.core.config import DEFAULT_MODEL_NAMES
+from vcut.io.ffmpeg_utils import decode_process_output, resolve_ffmpeg_command
 from vcut.io.retry import retry_call
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_ffmpeg_command() -> str:
-    suffix = ".exe" if os.name == "nt" else ""
-    local_ffmpeg = Path(__file__).resolve().parents[2] / "ffmpeg" / "bin" / f"ffmpeg{suffix}"
-    if local_ffmpeg.exists():
-        return str(local_ffmpeg)
-    return "ffmpeg"
-
-
 def _ensure_ffmpeg_on_path() -> None:
-    ffmpeg_cmd = _resolve_ffmpeg_command()
+    ffmpeg_cmd = resolve_ffmpeg_command()
     ffmpeg_path = Path(ffmpeg_cmd)
     if not ffmpeg_path.is_absolute():
         return
@@ -41,17 +34,6 @@ def _ensure_ffmpeg_on_path() -> None:
         os.environ["PATH"] = f"{ffmpeg_dir}{os.pathsep}{current_path}" if current_path else ffmpeg_dir
 
 
-def _decode_process_output(output: bytes | str | None) -> str:
-    if output is None:
-        return ""
-    if isinstance(output, str):
-        return output.strip()
-    text = output.decode("utf-8", errors="replace").strip()
-    if text:
-        return text
-    return output.decode("gbk", errors="replace").strip()
-
-
 def _make_temp_wav_path() -> Path:
     fd, path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
@@ -59,7 +41,7 @@ def _make_temp_wav_path() -> Path:
 
 
 def _extract_audio_to_wav(video_path: Path, wav_path: Path) -> None:
-    ffmpeg_cmd = _resolve_ffmpeg_command()
+    ffmpeg_cmd = resolve_ffmpeg_command()
     command = [
         ffmpeg_cmd,
         "-y",
@@ -79,8 +61,8 @@ def _extract_audio_to_wav(video_path: Path, wav_path: Path) -> None:
     except FileNotFoundError as exc:
         raise RuntimeError("ffmpeg is not available for audio extraction.") from exc
     except subprocess.CalledProcessError as exc:
-        stderr = _decode_process_output(exc.stderr)
-        stdout = _decode_process_output(exc.stdout)
+        stderr = decode_process_output(exc.stderr)
+        stdout = decode_process_output(exc.stdout)
         details = stderr or stdout or "unknown ffmpeg error"
         raise RuntimeError(f"Audio extraction failed: {details}") from exc
 
@@ -284,21 +266,13 @@ def transcribe_with_doubao_flash(video_path: str, asr_config: dict | None = None
     return map_doubao_response_to_transcript(response_payload, resource_id, request_id)
 
 
-def transcribe(video_path: str) -> list[dict]:
-    transcript = transcribe_with_doubao_flash(video_path)
-    return transcript["segments"]
-
-
 def transcribe_to_artifacts(
     video_path: str,
     transcript_json_path: Path,
     transcript_srt_path: Path,
-    model_name: str = "base",
-    model: Any | None = None,
-    asr_options: dict[str, Any] | None = None,
     asr_config: dict | None = None,
 ) -> dict:
-    del model_name, model, asr_options
+    """Transcribe video and write transcript artifacts."""
     effective_config = dict(asr_config or {})
     transcript = transcribe_with_doubao_flash(video_path, effective_config)
     transcript = normalize_transcript_payload(transcript)
@@ -307,6 +281,7 @@ def transcribe_to_artifacts(
     return transcript
 
 
-def transcribe_audio(video_path: str) -> str:
-    return " ".join(segment["text"] for segment in transcribe(video_path)).strip()
-
+__all__ = [
+    "transcribe_to_artifacts",
+    "transcribe_with_doubao_flash",
+]

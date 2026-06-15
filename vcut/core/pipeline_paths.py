@@ -78,20 +78,10 @@ def resolve_output_video_path(
     return str(resolved)
 
 
-_MODE_PREFIX = {
-    "asr": "a",
-    "asr+video": "a+v",
-    "video": "v",
-}
-
-
-def variant_output_path(output_video: str, index: int, mode: str = "") -> str:
+def variant_output_path(output_video: str, index: int) -> str:
     path = Path(output_video)
     suffix = path.suffix or ".mp4"
     stem = path.stem
-    prefix = _MODE_PREFIX.get(mode, "")
-    if prefix:
-        stem = f"{prefix}_{stem}"
     if index <= 1:
-        return str(path.with_name(f"{stem}{suffix}"))
+        return str(path)
     return str(path.with_name(f"{stem}_{index:03d}{suffix}"))

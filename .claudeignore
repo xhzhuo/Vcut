@@ -1,0 +1,104 @@
+# ===========================================
+# claude 分析忽略文件
+# ===========================================
+
+# 版本控制
+.git/
+
+# 环境变量和密钥
+.env
+.env.*
+
+# FFmpeg 二进制工具（系统安装，非代码）
+ffmpeg/
+
+# 输入输出数据（非代码逻辑）
+inputs/
+output/
+artifacts/
+
+# Python 缓存和编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Python 虚拟环境
+venv/
+.venv/
+env/
+.env/
+
+# 测试缓存和临时文件
+.pytest_cache/
+.pytest_tmp/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# 测试数据目录（保留测试代码，忽略测试数据）
+test_artifacts*/
+test_inputs_dir/
+test_manual_pipeline/
+test_manual_segments_strategy/
+test_render_work_case*/
+test_asr_cache_provider/
+test_asr_provider_outputs/
+pytest-cache-files-*/
+
+# 构建和分发产物
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+
+# IDE 和编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Claude 和 Codex 配置（保留，对理解项目工具链有帮助）
+# .claude/
+# .codex/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 临时和备份文件
+*.tmp
+*.temp
+*.bak
+*.bak.*
+*.log
+dsb.zip
+
+# 本地工具/用户目录
+.clawhub/
+.local-backups/
+skills/
+
+# 特定的大文件或临时文件
+C:UsersshazhuoDownloadsvcut_full_diff.txt
+
+# Archived temporary files
+_archived/
+
+# Docker 忽略规则文件（非核心代码逻辑）
+.dockerignore
+
+
+.understand-anything

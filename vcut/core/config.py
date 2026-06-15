@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from vcut.manual.review_defaults import DEFAULT_REVIEW_CRITERIA_ITEMS_ZH
+
 
 DEFAULT_MODEL_NAMES: dict[str, str] = {
     "asr": "bigmodel",
@@ -45,13 +47,6 @@ DEFAULT_CONFIG: dict = {
         "understanding": DEFAULT_MODEL_NAMES["understanding"],
         "strategy": DEFAULT_MODEL_NAMES["strategy"],
     },
-    "input": {
-        "extensions": [".mp4", ".mov", ".avi", ".mkv"],
-    },
-    "artifacts": {
-        "videos_dir": "videos",
-        "catalog_json": "catalog.json",
-    },
     "asr": {
         "model_name": DEFAULT_MODEL_NAMES["asr"],
         "language": "zh",
@@ -74,16 +69,6 @@ DEFAULT_CONFIG: dict = {
             "model_name": DEFAULT_MODEL_NAMES["asr"],
         },
     },
-    "scene": {
-        "threshold": 27.0,
-        "min_shot_duration": 0.5,
-        "shots_json": "shots.json",
-        "keyframes_dir": "keyframes",
-    },
-    "alignment": {
-        "asset_pool_json": "asset_pool.json",
-        "asset_pool_jsonl": "asset_pool.jsonl",
-    },
     "understanding": {
         "model_name": DEFAULT_MODEL_NAMES["understanding"],
         "api_key_env": DEFAULT_API_CONFIG["understanding"]["api_key_env"],
@@ -99,28 +84,36 @@ DEFAULT_CONFIG: dict = {
         "model_name": DEFAULT_MODEL_NAMES["strategy"],
         "api_key_env": DEFAULT_API_CONFIG["strategy"]["api_key_env"],
         "endpoint": DEFAULT_API_CONFIG["strategy"]["endpoint"],
-        "target_duration": 60,
-        "style": "general",
-        "max_candidates": 50,
-        "max_candidates_per_video": 10,
         "min_clip_duration": 3.0,
         "max_clip_duration": 30,
         "edit_plan_json": "edit_plan.json",
+        "quality": {
+            "enabled": True,
+            "duplicate_similarity_threshold": 0.86,
+            "min_text_chars_for_similarity": 8,
+            "product_keywords": [],
+            "min_product_mentions": 1,
+            "max_product_mentions": 2,
+        },
+        "review": {
+            "enabled": True,
+            "min_score": 85,
+            "criteria": DEFAULT_REVIEW_CRITERIA_ITEMS_ZH,
+        },
     },
     "render": {
         "enabled": True,
         "temp_dir": "render_tmp",
         "video_codec": "libx264",
         "audio_codec": "aac",
+        "audio_bitrate": "192k",
+        "target_fps": 30,
+        "target_audio_sample_rate": 44100,
+        "target_audio_channels": 2,
+        "normalize_clips": True,
+        "concat_stream_copy": False,
         "overwrite": True,
         "cleanup_on_success": True,
-    },
-    "cache": {
-        "enabled": True,
-        "rebuild_asr": False,
-        "rebuild_scene": False,
-        "rebuild_keyframes": False,
-        "rebuild_understanding": False,
     },
 }
 

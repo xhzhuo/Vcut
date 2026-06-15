@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from vcut.stages.asr import transcribe_to_artifacts
-from vcut.core.config import DEFAULT_MODEL_NAMES
 from vcut.io.fingerprint import short_hash
 
 
@@ -44,7 +43,6 @@ def build_transcript_index(
             video_path=src_video,
             transcript_json_path=transcript_json,
             transcript_srt_path=transcript_srt,
-            model_name=str(asr_config.get("model_name", DEFAULT_MODEL_NAMES["asr"])),
             asr_config=asr_config,
         )
         index[src_video] = payload

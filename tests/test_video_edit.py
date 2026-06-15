@@ -43,8 +43,11 @@ def test_render_video_runs_cut_and_concat_flow(monkeypatch, tmp_path) -> None:
     assert Path(output_video).exists()
     assert result["clip_count"] == 2
     assert result["duration_estimate"] == 2.7
+    assert result["adjusted_edit_plan"] == [
+        {"src_video": str(src_a), "start": 0.0, "end": 1.2, "duration": 1.2},
+        {"src_video": str(src_b), "start": 0.5, "end": 2.0, "duration": 1.5},
+    ]
     assert len(commands) == 3  # two cuts + one concat
 def test_render_video_empty_plan_raises() -> None:
     with pytest.raises(ValueError):
         render_video([], "out.mp4", {})
-
