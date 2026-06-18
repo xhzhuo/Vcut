@@ -114,6 +114,8 @@ class Task:
     progress: int = 0
     output_file: str = ""
     error: str = ""
+    internal_error: str = field(default="", repr=False)
+    process_exit_seen_at: float | None = field(default=None, repr=False)
     labels: list[str] = field(default_factory=list)
     variants: int = 1
     artifacts_subdir: str = ""
@@ -124,6 +126,115 @@ class Task:
 
 _tasks: dict[str, Task] = {}
 _lock = threading.Lock()
+_STALE_STARTING_SECONDS = 10
+
+
+def _refresh_running_tasks(now: float | None = None) -> None:
+    """Reconcile stale in-memory running tasks before accepting a new job."""
+    current_time = time.time() if now is None else now
+    for task in _tasks.values():
+        if task.status != "running":
+            continue
+        proc = task.process
+        if proc is None:
+            if current_time - task.created_at > _STALE_STARTING_SECONDS:
+                task.status = "failed"
+                task.stage = "interrupted"
+                task.progress = 0
+                task.error = "任务已中断，请重新提交"
+            continue
+        if proc.poll() is None:
+            task.process_exit_seen_at = None
+            continue
+        _detect_progress(task)
+        if task.status != "running":
+            continue
+        if task.process_exit_seen_at is None:
+            task.process_exit_seen_at = current_time
+            continue
+        if current_time - task.process_exit_seen_at < _STALE_STARTING_SECONDS:
+            continue
+        if proc.returncode == 0:
+            task.status = "done"
+            task.stage = "complete"
+            task.progress = 100
+        else:
+            task.status = "failed"
+            task.stage = "interrupted"
+            task.error = "生成没有完成，请重新提交"
+
+
+def _public_pipeline_error(raw_error: str) -> str:
+    """Convert technical pipeline failures into user-facing next steps."""
+    raw = str(raw_error or "").strip()
+    lower = raw.lower()
+
+    label_match = re.search(r"No (?:more )?segments? found for label: ([^\n\r]+)", raw, re.I)
+    if not label_match:
+        label_match = re.search(r"No more unique candidates available for label: ([^\n\r]+)", raw, re.I)
+    if label_match:
+        label = label_match.group(1).strip().strip("`'\"")
+        return f"标签「{label}」可用素材不足。请补充这个标签的素材，或调整标签顺序后重试。"
+
+    if "only generated" in lower and "unique plans" in lower:
+        return "这次没有找到足够的合格片段组合。可以减少生成数量，调整标签顺序，或补充更多素材后重试。"
+
+    if (
+        "urlopen error" in lower
+        or "connectionrefused" in lower
+        or "winerror 10061" in lower
+        or "timed out" in lower
+        or "timeout" in lower
+        or "request failed" in lower
+        or "server error" in lower
+    ):
+        return "智能选片暂时没有完成。请稍后重试；如果多次失败，请联系维护人员。"
+
+    if "unique_src_video" in lower or "different source video" in lower:
+        return "可用素材不足以满足不同来源的要求。可以关闭素材不重复要求，或补充更多来源素材后重试。"
+
+    if (
+        "manual xlsx not found" in lower
+        or "no label columns found" in lower
+        or "missing required column" in lower
+        or "no manual segments parsed" in lower
+        or "invalid time" in lower
+        or "invalid time range" in lower
+    ):
+        return "切片方案文件内容无法用于生成。请确认切片方案已上传，标签列和时间范围填写完整后重试。"
+
+    if (
+        "manual video dir not found" in lower
+        or "source video" in lower
+        or "input video does not exist" in lower
+        or "no clips to concatenate" in lower
+        or "edit plan is empty" in lower
+    ):
+        return "素材文件无法用于生成。请确认素材文件可以正常打开，并且切片方案中的素材名称与上传文件一致。"
+
+    if (
+        "ffmpeg" in lower
+        or "audio extraction" in lower
+        or "concatenate" in lower
+        or "render" in lower
+    ):
+        return "视频片段拼接没有完成。请确认素材文件可以正常打开，然后稍后重试。"
+
+    if "llm 选片失败" in lower or "reviewer rejected" in lower:
+        return "这次没有选出通过检查的片段组合。可以调整剪辑目标、标签顺序，或补充更匹配的素材后重试。"
+
+    if (
+        "api" in lower
+        or "json" in lower
+        or "traceback" in lower
+        or "exception" in lower
+        or "config" in lower
+        or "key" in lower
+        or "token" in lower
+    ):
+        return "智能选片暂时没有完成。请稍后重试；如果多次失败，请联系维护人员。"
+
+    return "生成没有完成。请确认素材文件可以正常打开、切片方案文件已上传，然后稍后重试。"
 
 # ---------------------------------------------------------------------------
 # Progress detection for manual pipeline
@@ -246,6 +357,27 @@ def _task_outputs(task: Task) -> list[dict[str, Any]]:
     return outputs
 
 
+def _is_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".vcut_write_probe_{uuid.uuid4().hex}"
+        probe.mkdir()
+        probe.rmdir()
+        return True
+    except OSError as exc:
+        logger.warning("Output directory is not writable: %s (%s)", path, exc)
+        return False
+
+
+def _select_task_output_dir(brand: str) -> Path:
+    output_dir = _output_brand_dir(brand)
+    if _is_writable_dir(output_dir):
+        return output_dir.resolve(strict=False)
+    artifacts_dir = _artifacts_brand_dir(brand)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    return artifacts_dir.resolve(strict=False)
+
+
 def _cleanup_brand_artifacts(brand: str) -> None:
     """Keep historical edit artifacts intact.
 
@@ -261,7 +393,7 @@ def _run_manual_pipeline(task: Task) -> None:
     try:
         xlsx_path = str(INPUTS_DIR / task.brand / "切片方案.xlsx")
         video_dir = str(INPUTS_DIR / task.brand)
-        output_path = str(OUTPUT_DIR / task.brand / f"{task.id}.mp4")
+        output_path = str(_select_task_output_dir(task.brand) / f"{task.id}.mp4")
         task.output_file = output_path
 
         # Ensure output dir exists
@@ -304,6 +436,7 @@ def _run_manual_pipeline(task: Task) -> None:
             cwd=str(Path(__file__).resolve().parents[2]),
         )
         task.process = proc
+        task.process_exit_seen_at = None
 
         output_lines: list[str] = []
         for line in proc.stdout:  # type: ignore[union-attr]
@@ -323,7 +456,9 @@ def _run_manual_pipeline(task: Task) -> None:
         if proc.returncode != 0:
             task.status = "failed"
             tail = "\n".join(output_lines[-30:]) if output_lines else "(no output)"
-            task.error = f"Pipeline exited with code {proc.returncode}\n\n--- last output ---\n{tail}"
+            raw_error = f"Pipeline exited with code {proc.returncode}\n\n--- last output ---\n{tail}"
+            task.internal_error = raw_error
+            task.error = _public_pipeline_error(raw_error)
             logger.error("Pipeline failed (exit %d): %s", proc.returncode, tail)
         else:
             # Find actual output file (pipeline may have redirected the path)
@@ -341,7 +476,9 @@ def _run_manual_pipeline(task: Task) -> None:
             return
         logger.exception("Pipeline failed")
         task.status = "failed"
-        task.error = str(exc)
+        raw_error = str(exc)
+        task.internal_error = raw_error
+        task.error = _public_pipeline_error(raw_error)
     finally:
         task.process = None
 
@@ -516,6 +653,7 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
         raise HTTPException(status_code=400, detail="生成变体数量必须在 1 到 10 之间")
 
     with _lock:
+        _refresh_running_tasks()
         # Check if any task is actually running
         if any(t.status == "running" for t in _tasks.values()):
             raise HTTPException(status_code=429, detail="已有任务在运行，请等待完成")
@@ -551,12 +689,16 @@ async def create_task(body: dict, current_user: str = Depends(get_current_user))
 
 @app.get("/api/tasks")
 async def list_tasks(current_user: str = Depends(get_current_user)):
+    with _lock:
+        _refresh_running_tasks()
     return [_task_dict(t) for t in _tasks.values()]
 
 
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: str, current_user: str = Depends(get_current_user)):
-    task = _tasks.get(task_id)
+    with _lock:
+        _refresh_running_tasks()
+        task = _tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     _detect_progress(task)

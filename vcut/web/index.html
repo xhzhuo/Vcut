@@ -10,11 +10,11 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: #0f0f0f; color: #e0e0e0;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    padding: 20px;
+    padding: 24px;
   }
   .card {
-    background: #1a1a1a; border-radius: 16px; padding: 40px;
-    width: 860px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    background: #1a1a1a; border-radius: 10px; padding: 28px;
+    width: min(100%, 960px); margin: 0 auto; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
   h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
   .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
@@ -38,7 +38,7 @@
   /* Brand grid */
   .brand-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
   .brand-card {
-    background: #222; border: 2px solid #333; border-radius: 12px;
+    background: #222; border: 2px solid #333; border-radius: 8px;
     padding: 20px; cursor: pointer; transition: all 0.2s;
   }
   .brand-card:hover { border-color: #4a9eff; background: #1a2a3a; }
@@ -93,7 +93,7 @@
   .mode-selector { display: flex; gap: 12px; }
   .mode-option {
     flex: 1; padding: 16px; background: #111; border: 2px solid #333;
-    border-radius: 12px; cursor: pointer; transition: all 0.2s;
+    border-radius: 8px; cursor: pointer; transition: all 0.2s;
     text-align: center; position: relative;
   }
   .mode-option:hover { border-color: #555; background: #1a1a1a; }
@@ -108,6 +108,21 @@
   .mode-icon { font-size: 28px; margin-bottom: 8px; }
   .mode-label { font-size: 14px; font-weight: 600; color: #4a9eff; margin-bottom: 4px; }
   .mode-desc { font-size: 12px; color: #888; }
+
+  .advanced-toggle {
+    width: 100%; background: #111; border: 1px solid #333; color: #ccc;
+    border-radius: 8px; padding: 12px 14px; cursor: pointer; text-align: left;
+    font-size: 14px; margin-bottom: 16px; transition: all 0.2s;
+  }
+  .advanced-toggle:hover { border-color: #555; color: #e0e0e0; }
+  .advanced-toggle::after { content: "展开"; float: right; color: #888; }
+  .advanced-toggle.active::after { content: "收起"; }
+  .advanced-panel {
+    display: none; background: #111; border: 1px solid #2a2a2a;
+    border-radius: 8px; padding: 16px; margin-bottom: 20px;
+  }
+  .advanced-panel.active { display: block; }
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
   /* Buttons */
   .btn {
@@ -172,7 +187,8 @@
     text-decoration: none; font-size: 14px; margin-top: 12px; cursor: pointer;
   }
   .btn-retry:hover { border-color: #555; color: #ccc; }
-  .error-text { color: #ff6b6b; font-size: 13px; margin: 12px 0; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; background: rgba(255,107,107,0.08); border-radius: 8px; padding: 12px 16px; text-align: left; font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .error-text { color: #ffb3b3; font-size: 14px; margin: 12px 0; white-space: pre-wrap; background: rgba(255,107,107,0.08); border-radius: 8px; padding: 14px 16px; text-align: left; line-height: 1.6; }
+  .error-actions { color: #aaa; font-size: 13px; text-align: left; background: #111; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; line-height: 1.8; }
   .storage-bar { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; font-size: 13px; color: #aaa; }
   .storage-bar .bar-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
   .storage-bar .bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
@@ -269,22 +285,31 @@
   }
   .brand-select:focus { border-color: #4a9eff; }
   .output-card {
-    background: #222; border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+    background: #222; border-radius: 8px; margin-bottom: 16px; overflow: hidden;
     border: 1px solid #333;
   }
   .output-header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 14px 18px; cursor: pointer; transition: background 0.2s;
   }
   .output-header:hover { background: #2a2a2a; }
   .output-name { font-weight: 600; font-size: 14px; }
+  .output-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .output-pill { color: #aaa; background: #1a1a1a; border-radius: 12px; padding: 3px 8px; font-size: 12px; }
   .output-size { color: #666; font-size: 12px; margin-left: 8px; }
   .output-time { color: #666; font-size: 12px; }
-  .output-actions { display: flex; gap: 6px; }
+  .output-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .output-body {
     display: none; padding: 0 18px 18px; border-top: 1px solid #333;
   }
   .output-body.active { display: block; padding-top: 16px; }
+  .output-summary {
+    background: #1a1a1a; border-radius: 8px; padding: 14px 16px;
+    margin-bottom: 14px; color: #aaa; font-size: 13px; line-height: 1.8;
+  }
+  .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+  .summary-label { color: #777; margin-right: 6px; }
+  .table-scroll { overflow-x: auto; margin-bottom: 16px; }
 
   /* Edit plan table */
   .plan-table {
@@ -338,9 +363,9 @@
   .btn-feedback:hover { background: #3a8eef; }
 
   /* Login Page */
-  #login-page { display: none; }
+  #login-page { display: none; width: 100%; }
   #login-page.active { display: flex; }
-  #app { display: none; }
+  #app { display: none; width: 100%; }
   #app.active { display: block; }
   .login-card {
     background: #1a1a1a; border-radius: 16px; padding: 48px 40px;
@@ -356,9 +381,58 @@
     transition: all 0.2s; margin-left: auto;
   }
   .logout-btn:hover { color: #e0e0e0; border-color: #666; }
+  .toast-stack {
+    position: fixed; right: 20px; top: 20px; z-index: 30;
+    display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100vw - 40px));
+  }
+  .toast {
+    background: #232323; border: 1px solid #333; border-radius: 8px;
+    padding: 12px 14px; color: #ddd; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  .toast.success { border-color: #2d7d46; }
+  .toast.error { border-color: #a33; color: #ffd2d2; }
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 40;
+    background: rgba(0,0,0,0.58); align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal-card {
+    width: min(100%, 420px); background: #1f1f1f; border: 1px solid #333;
+    border-radius: 10px; padding: 20px; box-shadow: 0 16px 60px rgba(0,0,0,0.45);
+  }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .modal-message { color: #aaa; font-size: 14px; line-height: 1.6; margin-bottom: 14px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+  @media (max-width: 760px) {
+    body { padding: 12px; }
+    .card { padding: 18px; border-radius: 8px; }
+    h1 { font-size: 24px; }
+    .brand-grid { grid-template-columns: 1fr; }
+    .tabs { overflow-x: auto; }
+    .mode-selector, .new-brand-row, .upload-row { flex-direction: column; }
+    .mode-option, .new-brand-row input, .new-brand-row button, .upload-btn { width: 100%; }
+    .output-header, .brand-row, .file-row { align-items: flex-start; flex-direction: column; }
+    .output-actions, .brand-actions { width: 100%; justify-content: flex-start; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .btn-sm, .btn-icon { min-height: 36px; }
+  }
 </style>
 </head>
 <body>
+<div class="toast-stack" id="toast-stack"></div>
+
+<div class="modal-backdrop" id="confirm-modal" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-title" id="confirm-title">请确认</div>
+    <div class="modal-message" id="confirm-message"></div>
+    <input class="form-input" id="confirm-input" style="display:none;" autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn-sm" id="confirm-cancel" style="background:#333;color:#ccc;">取消</button>
+      <button class="btn-sm btn-primary" id="confirm-ok" style="background:#4a9eff;color:#fff;">确认</button>
+    </div>
+  </div>
+</div>
 
 <!-- Login Page -->
 <div id="login-page" style="min-height:100vh; align-items:center; justify-content:center;">
@@ -407,7 +481,7 @@
 
     <!-- Step 2: Config -->
     <div class="config-section" id="config-section">
-      <p class="section-title">配置剪辑参数</p>
+      <p class="section-title">生成成片</p>
       <div class="config-summary" id="config-summary"></div>
 
       <div class="form-group">
@@ -422,27 +496,32 @@
 
       <div class="form-group">
         <label>剪辑目标</label>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-          <select class="form-input" id="prompt-select" style="flex:1;" onchange="applyPrompt()">
-            <option value="">选择预设 Prompt（可选）</option>
-          </select>
-        </div>
         <textarea class="form-input" id="goal-input" rows="3" placeholder="描述剪辑目标，例如：突出产品卖点的15秒短视频，台词衔接自然"></textarea>
       </div>
 
-      <div class="form-group">
-        <label>LLM Review 标准</label>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-          <select class="form-input" id="review-criteria-select" style="flex:1;" onchange="applyReviewCriteria()">
-            <option value="">默认 Review 标准</option>
+      <button class="advanced-toggle" id="advanced-toggle" type="button" onclick="toggleAdvancedSettings()">使用高级设置</button>
+      <div class="advanced-panel" id="advanced-panel">
+        <div class="form-group">
+          <label>目标预设</label>
+          <select class="form-input" id="prompt-select" onchange="applyPrompt()">
+            <option value="">选择预设目标（可选）</option>
           </select>
-          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="resetReviewCriteria()">恢复默认</button>
-          <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" type="button" onclick="saveCurrentReviewCriteria()">保存为预设</button>
-          <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="updateCurrentReviewCriteria()">更新预设</button>
-          <button class="btn-sm" style="background:#3a1f1f;color:#ff8a8a;" type="button" onclick="deleteCurrentReviewCriteria()">删除预设</button>
         </div>
-        <textarea class="form-input" id="review-criteria-input" rows="7" placeholder="只填写审核标准条目，例如：1. 相邻片段在台词、情绪和画面上都应该自然衔接。"></textarea>
-        <div id="review-criteria-status" style="color:#888; font-size:12px; margin-top:6px;"></div>
+
+        <div class="form-group">
+          <label>成片检查标准</label>
+          <div class="button-row" style="margin-bottom:8px;">
+            <select class="form-input" id="review-criteria-select" style="flex:1; min-width:220px;" onchange="applyReviewCriteria()">
+              <option value="">默认检查标准</option>
+            </select>
+            <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="resetReviewCriteria()">恢复默认</button>
+            <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" type="button" onclick="saveCurrentReviewCriteria()">保存为预设</button>
+            <button class="btn-sm" style="background:#333;color:#ccc;" type="button" onclick="updateCurrentReviewCriteria()">更新预设</button>
+            <button class="btn-sm" style="background:#3a1f1f;color:#ff8a8a;" type="button" onclick="deleteCurrentReviewCriteria()">删除预设</button>
+          </div>
+          <textarea class="form-input" id="review-criteria-input" rows="7" placeholder="填写成片检查标准，例如：1. 相邻片段在台词、情绪和画面上都应该自然衔接。"></textarea>
+          <div id="review-criteria-status" style="color:#888; font-size:12px; margin-top:6px;"></div>
+        </div>
       </div>
 
       <div class="form-group" style="display:flex; align-items:center; gap:10px;">
@@ -454,7 +533,7 @@
       </div>
 
       <div class="form-group">
-        <label>分析模式</label>
+        <label>生成模式</label>
         <div class="mode-selector" id="mode-selector">
           <div class="mode-option active" data-value="asr" onclick="selectMode(this)">
             <div class="mode-icon">🎤</div>
@@ -469,7 +548,7 @@
         </div>
       </div>
 
-      <button class="btn btn-primary" id="start-btn">开始剪辑</button>
+      <button class="btn btn-primary" id="start-btn">开始生成成片</button>
       <button class="btn-back" id="back-btn">返回选择品牌</button>
     </div>
 
@@ -478,11 +557,11 @@
       <p class="section-title" id="progress-title">正在剪辑</p>
       <div class="stages">
         <span class="stage-tag" data-stage="starting">准备中</span>
-        <span class="stage-tag" data-stage="segments">素材解析</span>
-        <span class="stage-tag" data-stage="transcripts">语音识别</span>
-        <span class="stage-tag" data-stage="visual">视频理解</span>
-        <span class="stage-tag" data-stage="strategy">策略生成</span>
-        <span class="stage-tag" data-stage="render">视频渲染</span>
+        <span class="stage-tag" data-stage="segments">整理素材</span>
+        <span class="stage-tag" data-stage="transcripts">识别内容</span>
+        <span class="stage-tag" data-stage="visual">理解画面</span>
+        <span class="stage-tag" data-stage="strategy">挑选片段</span>
+        <span class="stage-tag" data-stage="render">生成视频</span>
       </div>
       <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
       <div class="stage-text" id="stage-text">准备中...</div>
@@ -504,6 +583,9 @@
       <div class="done-icon" style="color:#ff6b6b;">&#10007;</div>
       <p style="font-size:18px; font-weight:600; margin-bottom:8px;">剪辑失败</p>
       <pre class="error-text" id="error-text"></pre>
+      <div class="error-actions" id="error-actions">
+        可以尝试：确认素材文件可以正常打开、切片方案文件已上传，然后稍后重试。如果多次失败，请联系维护人员。
+      </div>
       <button class="btn-retry" onclick="resetUI()">重试</button>
     </div>
   </div>
@@ -627,6 +709,97 @@ function buttonHtml(label, attrs = '', className = 'btn-icon') {
   return `<button class="${className}" ${attrs}>${escapeHtml(label)}</button>`;
 }
 
+let modalResolve = null;
+
+function showToast(message, type = 'success') {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  stack.appendChild(toast);
+  setTimeout(() => toast.remove(), 3200);
+}
+
+function friendlyError(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return '操作没有完成，请稍后重试。';
+  if (/变体数量/.test(raw)) return raw;
+  if (/任务丢失|404|server|HTTP|connection|fetch/i.test(raw)) {
+    return '当前任务已中断，请重新提交。';
+  }
+  if (/api|json|traceback|exception|config|配置|key|token|stack|timeout|timed out|500|502|503/i.test(raw)) {
+    return '生成没有完成。请确认素材文件可以正常打开、切片方案文件已上传，然后稍后重试。';
+  }
+  return raw.length > 120 ? '操作没有完成，请稍后重试。' : raw;
+}
+
+function failMessage(action) {
+  const messages = {
+    load: '加载失败，请稍后重试。',
+    upload: '上传失败，请确认文件格式正确后重试。',
+    delete: '删除失败，请稍后重试。',
+    save: '保存失败，请稍后重试。',
+    create: '创建失败，请换个名称后重试。',
+    rename: '重命名失败，请换个名称后重试。',
+    feedback: '反馈保存失败，请稍后重试。'
+  };
+  return messages[action] || '操作没有完成，请稍后重试。';
+}
+
+function openModal({ title, message, confirmText = '确认', cancelText = '取消', input = false, placeholder = '', defaultValue = '' }) {
+  const modal = document.getElementById('confirm-modal');
+  const inputEl = document.getElementById('confirm-input');
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = message;
+  document.getElementById('confirm-ok').textContent = confirmText;
+  document.getElementById('confirm-cancel').textContent = cancelText;
+  inputEl.style.display = input ? 'block' : 'none';
+  inputEl.placeholder = placeholder;
+  inputEl.value = defaultValue;
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+  if (input) setTimeout(() => inputEl.focus(), 0);
+  return new Promise(resolve => {
+    modalResolve = resolve;
+  });
+}
+
+function closeModal(result) {
+  const modal = document.getElementById('confirm-modal');
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden', 'true');
+  if (modalResolve) modalResolve(result);
+  modalResolve = null;
+}
+
+async function confirmAction(message, title = '请确认') {
+  const result = await openModal({ title, message, confirmText: '确认删除' });
+  return result === true;
+}
+
+async function askText(title, message, placeholder) {
+  const result = await openModal({ title, message, confirmText: '保存', input: true, placeholder });
+  return typeof result === 'string' ? result.trim() : '';
+}
+
+document.getElementById('confirm-cancel').addEventListener('click', () => closeModal(false));
+document.getElementById('confirm-ok').addEventListener('click', () => {
+  const inputEl = document.getElementById('confirm-input');
+  closeModal(inputEl.style.display === 'block' ? inputEl.value : true);
+});
+document.getElementById('confirm-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') closeModal(e.currentTarget.value);
+});
+document.getElementById('confirm-modal').addEventListener('click', e => {
+  if (e.target.id === 'confirm-modal') closeModal(false);
+});
+
+function toggleAdvancedSettings() {
+  document.getElementById('advanced-toggle').classList.toggle('active');
+  document.getElementById('advanced-panel').classList.toggle('active');
+}
+
 // ==================== TAB SWITCH ====================
 function switchTab(page) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
@@ -681,7 +854,7 @@ async function selectBrand(name, cardEl) {
     loadPrompts(name);
     showSection('config');
   } catch (e) {
-    alert('读取切片方案失败: ' + e.message);
+    showToast('读取切片方案失败，请确认文件已上传。', 'error');
   }
 }
 
@@ -718,11 +891,11 @@ function selectMode(el) {
 document.getElementById('start-btn').addEventListener('click', async () => {
   if (!selectedBrand || brandLabels.length === 0) return;
   const btn = document.getElementById('start-btn');
-  btn.disabled = true; btn.textContent = '提交中...';
+  btn.disabled = true; btn.textContent = '正在提交...';
   const variants = parseInt(document.getElementById('variants-input').value, 10) || 1;
   if (variants < 1 || variants > 10) {
     showError('生成变体数量必须在 1 到 10 之间');
-    btn.disabled = false; btn.textContent = '开始剪辑';
+    btn.disabled = false; btn.textContent = '开始生成成片';
     return;
   }
   const body = { brand: selectedBrand, labels: brandLabels, variants };
@@ -741,7 +914,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     document.getElementById('progress-title').textContent = `正在剪辑 - ${selectedBrand}`;
     // Reset progress bar before showing progress section
     document.getElementById('progress-bar').style.width = '0%';
-    document.getElementById('stage-text').textContent = '准备中...';
+    document.getElementById('stage-text').textContent = '正在准备生成任务...';
     document.querySelectorAll('.stage-tag').forEach(el => {
       el.classList.remove('done', 'active');
       // Hide visual stage tag when not using understanding mode
@@ -751,7 +924,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     });
     showSection('progress'); pollStatus();
   } catch (e) { showError(e.message); }
-  finally { btn.disabled = false; btn.textContent = '开始剪辑'; }
+  finally { btn.disabled = false; btn.textContent = '开始生成成片'; }
 });
 
 async function pollStatus() {
@@ -761,7 +934,7 @@ async function pollStatus() {
     if (!resp.ok) {
       // Task not found (e.g. server restarted) — stop polling
       if (resp.status === 404) {
-        showError('任务丢失（服务器可能已重启），请重新提交');
+        showError('当前任务已中断，请重新提交。');
         return;
       }
       throw new Error(`HTTP ${resp.status}`);
@@ -770,13 +943,13 @@ async function pollStatus() {
     pollFailureCount = 0;
     updateProgress(data.stage || 'starting', data.progress || 0);
     if (data.status === 'done') { showDone(data); return; }
-    if (data.status === 'failed') { showError(data.error || '未知错误'); return; }
+    if (data.status === 'failed') { showError(data.error || '生成没有完成'); return; }
     if (data.status === 'aborted') { showError('剪辑已中止'); return; }
     pollTimer = setTimeout(pollStatus, 1500);
   } catch (e) {
     pollFailureCount += 1;
     if (pollFailureCount >= 2) {
-      document.getElementById('stage-text').textContent = '连接中断，正在重试...';
+      document.getElementById('stage-text').textContent = '暂时没有收到进度更新，正在继续等待...';
     }
     pollTimer = setTimeout(pollStatus, 3000);
   }
@@ -792,7 +965,15 @@ function showSection(name) {
 
 function updateProgress(stage, pct) {
   document.getElementById('progress-bar').style.width = pct + '%';
-  const labels = {starting:'准备中',segments:'素材解析',transcripts:'语音识别',visual:'视频理解',strategy:'策略生成',render:'视频渲染',complete:'完成'};
+  const labels = {
+    starting:'正在准备生成任务',
+    segments:'正在整理素材',
+    transcripts:'正在识别视频内容',
+    visual:'正在理解画面内容',
+    strategy:'正在挑选合适片段',
+    render:'正在生成最终视频',
+    complete:'成片已生成'
+  };
   document.getElementById('stage-text').textContent = (labels[stage] || stage) + ` (${pct}%)`;
   document.querySelectorAll('.stage-tag').forEach(el => {
     const s = el.dataset.stage, order = ['starting','segments','transcripts','visual','strategy','render'];
@@ -817,7 +998,10 @@ function showDone(data) {
   }
 }
 
-function showError(msg) { showSection('error'); document.getElementById('error-text').textContent = msg; }
+function showError(msg) {
+  showSection('error');
+  document.getElementById('error-text').textContent = friendlyError(msg);
+}
 
 async function abortTask() {
   if (!currentTaskId) return;
@@ -835,13 +1019,13 @@ function resetUI() {
   currentTaskId = null; selectedBrand = null; brandLabels = [];
   document.getElementById('variants-input').value = '1';
   document.getElementById('goal-input').value = '';
-  document.getElementById('prompt-select').innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+  document.getElementById('prompt-select').innerHTML = '<option value="">选择预设目标（可选）</option>';
   loadReviewCriteria();
   document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('active'));
   document.querySelector('.mode-option[data-value="asr"]').classList.add('active');
   // Reset progress bar and stage tags
   document.getElementById('progress-bar').style.width = '0%';
-  document.getElementById('stage-text').textContent = '准备中...';
+  document.getElementById('stage-text').textContent = '正在准备生成任务...';
   document.getElementById('download-list').innerHTML = '';
   pollFailureCount = 0;
   document.querySelectorAll('.stage-tag').forEach(el => {
@@ -883,7 +1067,7 @@ async function loadManageBrands() {
         </div>
         <div class="brand-actions">
           <button class="btn-icon" onclick='event.stopPropagation(); toggleFilePanel(${jsArg(b.name)})'>文件</button>
-          <button class="btn-icon" onclick='event.stopPropagation(); togglePromptPanel(${jsArg(b.name)})'>Prompt</button>
+          <button class="btn-icon" onclick='event.stopPropagation(); togglePromptPanel(${jsArg(b.name)})'>目标预设</button>
           <button class="btn-icon danger" onclick='event.stopPropagation(); deleteBrand(${jsArg(b.name)})'>删除</button>
         </div>
       `;
@@ -943,7 +1127,7 @@ async function toggleFilePanel(brand) {
     const files = await resp.json();
     renderFilePanel(brand, files);
   } catch (e) {
-    panel.innerHTML = `<div style="color:#ff6b6b; font-size:13px;">加载失败: ${e.message}</div>`;
+    panel.innerHTML = `<div style="color:#ffb3b3; font-size:13px;">${failMessage('load')}</div>`;
   }
 }
 
@@ -994,22 +1178,24 @@ async function uploadFile(brand, input) {
     toggleFilePanel(brand);
     setTimeout(() => toggleFilePanel(brand), 100);
     loadManageBrands();
+    showToast('上传成功');
   } catch (e) {
-    alert('上传失败: ' + e.message);
+    showToast(failMessage('upload'), 'error');
   }
   input.value = '';
 }
 
 async function deleteFile(brand, filename) {
-  if (!confirm(`确定删除 ${filename}？`)) return;
+  if (!await confirmAction(`确定删除「${filename}」吗？删除后无法在页面中恢复。`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     toggleFilePanel(brand);
     setTimeout(() => toggleFilePanel(brand), 100);
     loadManageBrands();
+    showToast('删除成功');
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    showToast(failMessage('delete'), 'error');
   }
 }
 
@@ -1053,7 +1239,7 @@ async function togglePromptPanel(brand) {
     const prompts = await resp.json();
     renderPromptPanel(brand, prompts);
   } catch (e) {
-    panel.innerHTML = `<div style="color:#ff6b6b; font-size:13px;">加载失败: ${e.message}</div>`;
+    panel.innerHTML = `<div style="color:#ffb3b3; font-size:13px;">${failMessage('load')}</div>`;
   }
 }
 
@@ -1077,14 +1263,14 @@ function renderPromptPanel(brand, prompts) {
   });
 
   if (prompts.length === 0) {
-    html = '<div style="color:#888; font-size:13px; padding:8px 0;">暂无预设 Prompt</div>';
+    html = '<div style="color:#888; font-size:13px; padding:8px 0;">暂无目标预设</div>';
   }
 
   html += `
     <div style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
-      <div style="font-size:13px; color:#aaa; margin-bottom:8px;">添加新 Prompt</div>
+      <div style="font-size:13px; color:#aaa; margin-bottom:8px;">添加目标预设</div>
       <input class="form-input" data-role="new-prompt-name" placeholder="名称，例如：15秒卖点短视频" style="margin-bottom:6px;">
-      <textarea class="form-input" data-role="new-prompt-content" rows="3" placeholder="Prompt 内容" style="margin-bottom:6px;"></textarea>
+      <textarea class="form-input" data-role="new-prompt-content" rows="3" placeholder="目标内容" style="margin-bottom:6px;"></textarea>
       <button class="btn-sm btn-primary" style="background:#4a9eff;color:#fff;" onclick='addPrompt(${jsArg(brand)})'>添加</button>
     </div>`;
 
@@ -1095,7 +1281,7 @@ async function addPrompt(brand) {
   const panel = findBrandPanel(brand, 'prompts');
   const name = panel?.querySelector('[data-role="new-prompt-name"]')?.value.trim() || '';
   const content = panel?.querySelector('[data-role="new-prompt-content"]')?.value.trim() || '';
-  if (!name || !content) { alert('名称和内容不能为空'); return; }
+  if (!name || !content) { showToast('名称和内容不能为空。', 'error'); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1104,7 +1290,8 @@ async function addPrompt(brand) {
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
-  } catch (e) { alert('添加失败: ' + e.message); }
+    showToast('添加成功');
+  } catch (e) { showToast(failMessage('save'), 'error'); }
 }
 
 function editPrompt(brand, pid, name, content) {
@@ -1128,7 +1315,7 @@ async function savePrompt(brand, pid) {
   if (!nameEl || !contentEl) return;
   const newName = nameEl.value.trim();
   const newContent = contentEl.value.trim();
-  if (!newName || !newContent) { alert('名称和内容不能为空'); return; }
+  if (!newName || !newContent) { showToast('名称和内容不能为空。', 'error'); return; }
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, {
       method: 'PUT', headers: {'Content-Type': 'application/json'},
@@ -1137,17 +1324,19 @@ async function savePrompt(brand, pid) {
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
-  } catch (e) { alert('编辑失败: ' + e.message); }
+    showToast('保存成功');
+  } catch (e) { showToast(failMessage('save'), 'error'); }
 }
 
 async function deletePrompt(brand, pid) {
-  if (!confirm('确定删除此 Prompt？')) return;
+  if (!await confirmAction('确定删除这个目标预设吗？')) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts/${pid}`, { method: 'DELETE' });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
     togglePromptPanel(brand);
     setTimeout(() => togglePromptPanel(brand), 100);
-  } catch (e) { alert('删除失败: ' + e.message); }
+    showToast('删除成功');
+  } catch (e) { showToast(failMessage('delete'), 'error'); }
 }
 
 async function createBrand() {
@@ -1159,20 +1348,22 @@ async function createBrand() {
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     input.value = '';
     loadManageBrands();
+    showToast('品牌已创建');
   } catch (e) {
-    alert('创建失败: ' + e.message);
+    showToast(failMessage('create'), 'error');
   }
 }
 
 async function deleteBrand(brand) {
-  if (!confirm(`确定删除品牌「${brand}」及其所有文件？此操作不可恢复。`)) return;
+  if (!await confirmAction(`确定删除品牌「${brand}」及其所有文件吗？此操作无法在页面中恢复。`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}`, { method: 'DELETE' });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     manageExpandedBrand = null;
     loadManageBrands();
+    showToast('品牌已删除');
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    showToast(failMessage('delete'), 'error');
   }
 }
 
@@ -1212,7 +1403,7 @@ async function loadPrompts(brand) {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/prompts`);
     brandPrompts = await resp.json();
     const sel = document.getElementById('prompt-select');
-    sel.innerHTML = '<option value="">选择预设 Prompt（可选）</option>';
+    sel.innerHTML = '<option value="">选择预设目标（可选）</option>';
     brandPrompts.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
@@ -1231,7 +1422,7 @@ function applyPrompt() {
 
 async function loadReviewCriteria() {
   const status = document.getElementById('review-criteria-status');
-  if (status) status.textContent = '正在加载默认 Review 标准...';
+  if (status) status.textContent = '正在加载默认检查标准...';
   try {
     const resp = await fetch('/api/review/criteria');
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '加载失败'); }
@@ -1250,10 +1441,10 @@ async function loadReviewCriteria() {
       sel.value = defaultItem.id;
       document.getElementById('review-criteria-input').value = defaultItem.content;
     }
-    if (status) status.textContent = `已加载 ${brandReviewCriteria.length} 个 Review 标准`;
+    if (status) status.textContent = `已加载 ${brandReviewCriteria.length} 个检查标准`;
   } catch (e) {
     console.error('loadReviewCriteria failed', e);
-    if (status) status.textContent = 'Review 标准加载失败：' + e.message;
+    if (status) status.textContent = '检查标准加载失败，请稍后重试。';
   }
 }
 
@@ -1271,8 +1462,8 @@ function resetReviewCriteria() {
 
 async function saveCurrentReviewCriteria() {
   const content = document.getElementById('review-criteria-input').value.trim();
-  if (!content) { alert('Review 标准不能为空'); return; }
-  const name = prompt('请输入 Review 标准名称，例如：高连贯性广告审核');
+  if (!content) { showToast('检查标准不能为空。', 'error'); return; }
+  const name = await askText('保存检查标准', '给这套检查标准起一个名称，后续可以直接复用。', '例如：高连贯性广告审核');
   if (!name || !name.trim()) return;
   try {
     const resp = await fetch('/api/review/criteria', {
@@ -1285,18 +1476,19 @@ async function saveCurrentReviewCriteria() {
     await loadReviewCriteria();
     document.getElementById('review-criteria-select').value = saved.id;
     applyReviewCriteria();
-  } catch (e) { alert('保存 Review 标准失败: ' + e.message); }
+    showToast('检查标准已保存');
+  } catch (e) { showToast(failMessage('save'), 'error'); }
 }
 
 async function updateCurrentReviewCriteria() {
   const pid = document.getElementById('review-criteria-select').value;
   const item = brandReviewCriteria.find(x => x.id === pid);
   if (!item || item.readonly || pid === '__default__') {
-    alert('默认 Review 标准不能更新，请先保存为新的预设');
+    showToast('默认检查标准不能更新，请先保存为新的预设。', 'error');
     return;
   }
   const content = document.getElementById('review-criteria-input').value.trim();
-  if (!content) { alert('Review 标准不能为空'); return; }
+  if (!content) { showToast('检查标准不能为空。', 'error'); return; }
   try {
     const resp = await fetch(`/api/review/criteria/${pid}`, {
       method: 'PUT',
@@ -1307,22 +1499,24 @@ async function updateCurrentReviewCriteria() {
     await loadReviewCriteria();
     document.getElementById('review-criteria-select').value = pid;
     applyReviewCriteria();
-  } catch (e) { alert('更新 Review 标准失败: ' + e.message); }
+    showToast('检查标准已更新');
+  } catch (e) { showToast(failMessage('save'), 'error'); }
 }
 
 async function deleteCurrentReviewCriteria() {
   const pid = document.getElementById('review-criteria-select').value;
   const item = brandReviewCriteria.find(x => x.id === pid);
   if (!item || item.readonly || pid === '__default__') {
-    alert('默认 Review 标准不能删除');
+    showToast('默认检查标准不能删除。', 'error');
     return;
   }
-  if (!confirm(`确定删除 Review 标准「${item.name}」吗？`)) return;
+  if (!await confirmAction(`确定删除检查标准「${item.name}」吗？`)) return;
   try {
     const resp = await fetch(`/api/review/criteria/${pid}`, { method: 'DELETE' });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '删除失败'); }
     await loadReviewCriteria();
-  } catch (e) { alert('删除 Review 标准失败: ' + e.message); }
+    showToast('检查标准已删除');
+  } catch (e) { showToast(failMessage('delete'), 'error'); }
 }
 
 // ==================== OUTPUT PAGE ====================
@@ -1341,6 +1535,38 @@ async function loadOutputBrandSelect() {
     sel.appendChild(opt);
   });
   if (sel.value) loadOutputs();
+}
+
+function planDuration(plan) {
+  if (!Array.isArray(plan)) return null;
+  const total = plan.reduce((sum, item) => {
+    const dur = item.duration ?? (Number(item.end) - Number(item.start));
+    return Number.isFinite(dur) && dur > 0 ? sum + dur : sum;
+  }, 0);
+  return total > 0 ? total : null;
+}
+
+function uniqueText(values, limit = 4) {
+  const clean = [...new Set(values.filter(Boolean).map(v => String(v)))];
+  if (clean.length === 0) return '暂无';
+  const visible = clean.slice(0, limit).map(escapeHtml).join('、');
+  return clean.length > limit ? `${visible} 等` : visible;
+}
+
+function outputSummary(v) {
+  const plan = Array.isArray(v.plan) ? v.plan : [];
+  const duration = planDuration(plan);
+  const labels = uniqueText(plan.map(item => item.label));
+  const sources = uniqueText(plan.map(item => item.video_id), 3);
+  const reasons = uniqueText(plan.map(item => item.reason), 2);
+  return {
+    durationText: duration ? fmtTime(duration) : '未知',
+    clipCountText: plan.length ? `${plan.length} 个` : '暂无',
+    labels,
+    sources,
+    reasons,
+    feedbackText: v.feedback ? '已评价' : '未评价'
+  };
 }
 
 async function loadOutputs() {
@@ -1366,12 +1592,16 @@ async function loadOutputs() {
       // Header
       const header = document.createElement('div');
       header.className = 'output-header';
+      const summary = outputSummary(v);
       header.innerHTML = `
-        <div>
-          <span class="output-name">${escapeHtml(v.name)}</span>
-          <span class="output-size">${Number(v.size_mb) || 0} MB</span>
-          <span class="output-time">${escapeHtml(v.created_at || '')}</span>
-          ${v.feedback ? '<span class="plan-role" style="background:#1a3c2a;color:#4caf50;margin-left:8px;">已评价</span>' : ''}
+        <div style="min-width:0; flex:1;">
+          <div class="output-name">${escapeHtml(v.name)}</div>
+          <div class="output-meta">
+            <span class="output-pill">${Number(v.size_mb) || 0} MB</span>
+            <span class="output-pill">预计时长 ${escapeHtml(summary.durationText)}</span>
+            <span class="output-pill">${escapeHtml(v.created_at || '生成时间未知')}</span>
+            <span class="output-pill">${summary.feedbackText}</span>
+          </div>
         </div>
         <div class="output-actions">
           <button class="btn-icon" onclick="event.stopPropagation(); window.open('/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(v.name)}/download')">下载</button>
@@ -1404,16 +1634,17 @@ async function loadOutputs() {
               + '</tr>';
           }).join('');
           planHtml = '<div style="margin-bottom:12px;">'
-            + '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">剪辑方案</div>'
+            + '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#aaa;">详细剪辑方案</div>'
+            + '<div class="table-scroll">'
             + '<table class="plan-table">'
             + '<tr><th>#</th><th>来源视频</th><th>时间</th><th>时长</th><th>标签</th><th>选取理由</th></tr>'
             + rows
-            + '</table></div>';
+            + '</table></div></div>';
         } catch (planErr) {
-          planHtml = '<div style="color:#ff6b6b;font-size:13px;">剪辑方案渲染出错: ' + planErr.message + '</div>';
+          planHtml = '<div style="color:#ffb3b3;font-size:13px;">详细方案暂时无法展示。</div>';
         }
       } else {
-        planHtml = '<div style="color:#666;font-size:13px;margin-bottom:12px;">无剪辑方案数据</div>';
+        planHtml = '<div style="color:#666;font-size:13px;margin-bottom:12px;">暂无详细方案</div>';
       }
 
       // Feedback form
@@ -1421,7 +1652,20 @@ async function loadOutputs() {
       const fbTags = ['节奏好', '内容准确', '画面流畅', '转场自然', '需要改进', '节奏拖沓', '内容不准', '画面跳跃'];
       const selectedTags = fb.tags || [];
 
-      body.innerHTML = planHtml + `
+      const summaryHtml = `
+        <div class="output-summary">
+          <div style="font-size:13px;font-weight:600;color:#ddd;margin-bottom:8px;">成片摘要</div>
+          <div class="summary-grid">
+            <div><span class="summary-label">预计时长</span>${escapeHtml(summary.durationText)}</div>
+            <div><span class="summary-label">使用片段</span>${escapeHtml(summary.clipCountText)}</div>
+            <div><span class="summary-label">片段顺序</span>${summary.labels}</div>
+            <div><span class="summary-label">主要来源</span>${summary.sources}</div>
+            <div><span class="summary-label">评价状态</span>${escapeHtml(summary.feedbackText)}</div>
+            <div><span class="summary-label">主要内容</span>${summary.reasons}</div>
+          </div>
+        </div>`;
+
+      body.innerHTML = summaryHtml + planHtml + `
         <div class="feedback-section">
           <div class="feedback-title">评价反馈</div>
           <div class="rating-stars" id="stars-${idx}">
@@ -1442,7 +1686,7 @@ async function loadOutputs() {
       list.appendChild(card);
     });
   } catch (e) {
-    list.innerHTML = `<div style="color:#ff6b6b;">加载失败: ${e.message}</div>`;
+    list.innerHTML = `<div style="color:#ffb3b3;">${failMessage('load')}</div>`;
   }
 }
 
@@ -1482,8 +1726,9 @@ async function submitFeedback(brand, filename, idx) {
     const saved = document.getElementById(`fbsaved-${idx}`);
     saved.style.display = 'inline';
     setTimeout(() => saved.style.display = 'none', 2000);
+    showToast('反馈已保存');
   } catch (e) {
-    alert('提交失败: ' + e.message);
+    showToast(failMessage('feedback'), 'error');
   }
 }
 
@@ -1519,20 +1764,22 @@ async function saveRename(brand, oldName) {
     });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     loadOutputs();
+    showToast('重命名成功');
   } catch (e) {
-    alert('重命名失败: ' + e.message);
+    showToast(failMessage('rename'), 'error');
     loadOutputs();
   }
 }
 
 async function deleteOutput(brand, filename) {
-  if (!confirm(`确定删除成品视频 ${filename}？`)) return;
+  if (!await confirmAction(`确定删除成品「${filename}」吗？删除后无法在页面中恢复。`)) return;
   try {
     const resp = await fetch(`/api/brands/${encodeURIComponent(brand)}/outputs/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail); }
     loadOutputs();
+    showToast('成品已删除');
   } catch (e) {
-    alert('删除失败: ' + e.message);
+    showToast(failMessage('delete'), 'error');
   }
 }
 

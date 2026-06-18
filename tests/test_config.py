@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+
 from vcut.core.config import DEFAULT_API_CONFIG, DEFAULT_MODEL_NAMES, load_config
+from vcut.core.env import _strip_dead_local_proxy
 
 
 def test_load_config_applies_unified_defaults() -> None:
@@ -84,4 +87,16 @@ def test_load_config_allows_apis_block_to_override_sections(tmp_path) -> None:
     assert config["understanding"]["endpoint"] == "https://example.com/vision"
     assert config["strategy"]["api_key_env"] == "PLAN_KEY_ENV_X"
     assert config["strategy"]["endpoint"] == "https://example.com/plan"
+
+
+def test_strip_dead_local_proxy_only_removes_blackhole_proxy(monkeypatch) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://localhost:9")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:7890")
+
+    _strip_dead_local_proxy()
+
+    assert "HTTP_PROXY" not in os.environ
+    assert "HTTPS_PROXY" not in os.environ
+    assert os.environ["ALL_PROXY"] == "http://127.0.0.1:7890"
 

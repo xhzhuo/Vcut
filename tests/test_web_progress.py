@@ -10,6 +10,118 @@ from vcut.manual.review_defaults import DEFAULT_REVIEW_CRITERIA_ITEMS_ZH
 from vcut.web import app as web_app
 
 
+def test_refresh_running_tasks_marks_stale_processless_task_failed(monkeypatch) -> None:
+    task = web_app.Task(
+        id="stale",
+        brand="brand_a",
+        created_at=0,
+        status="running",
+        stage="starting",
+        progress=0,
+    )
+    monkeypatch.setitem(web_app._tasks, task.id, task)
+
+    try:
+        web_app._refresh_running_tasks(now=web_app._STALE_STARTING_SECONDS + 1)
+
+        assert task.status == "failed"
+        assert task.stage == "interrupted"
+        assert task.progress == 0
+        assert "重新提交" in task.error
+    finally:
+        web_app._tasks.pop(task.id, None)
+
+
+def test_refresh_running_tasks_waits_for_runner_to_finalize_exited_process(monkeypatch) -> None:
+    class ExitedProcess:
+        returncode = 1
+
+        def poll(self) -> int:
+            return self.returncode
+
+    task = web_app.Task(
+        id="exited",
+        brand="brand_a",
+        created_at=0,
+        status="running",
+        stage="starting",
+        progress=0,
+        process=ExitedProcess(),
+    )
+    monkeypatch.setitem(web_app._tasks, task.id, task)
+
+    try:
+        web_app._refresh_running_tasks(now=20)
+
+        assert task.status == "running"
+        assert task.error == ""
+        assert task.process_exit_seen_at == 20
+
+        web_app._refresh_running_tasks(now=20 + web_app._STALE_STARTING_SECONDS + 1)
+
+        assert task.status == "failed"
+        assert task.error == "生成没有完成，请重新提交"
+    finally:
+        web_app._tasks.pop(task.id, None)
+
+
+def test_get_task_refreshes_stale_processless_task(monkeypatch) -> None:
+    task = web_app.Task(
+        id="stale_get",
+        brand="brand_a",
+        created_at=0,
+        status="running",
+        stage="starting",
+        progress=0,
+    )
+    monkeypatch.setitem(web_app._tasks, task.id, task)
+    monkeypatch.setattr(web_app.time, "time", lambda: web_app._STALE_STARTING_SECONDS + 1)
+
+    try:
+        result = asyncio.run(web_app.get_task(task.id, current_user="test"))
+
+        assert result["status"] == "failed"
+        assert result["stage"] == "interrupted"
+        assert result["progress"] == 0
+    finally:
+        web_app._tasks.pop(task.id, None)
+
+
+def test_public_pipeline_error_hides_technical_details() -> None:
+    message = web_app._public_pipeline_error("OpenAI API request failed: <urlopen error [WinError 10061]>")
+
+    assert "API" not in message
+    assert "KEY" not in message.upper()
+    assert "配置" not in message
+    assert "维护人员" in message
+    assert "智能选片" in message
+
+
+def test_public_pipeline_error_explains_label_shortage() -> None:
+    message = web_app._public_pipeline_error("No more unique candidates available for label: 结尾")
+
+    assert "标签「结尾」" in message
+    assert "素材不足" in message
+
+
+def test_select_task_output_dir_falls_back_to_artifacts(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "output"
+    artifacts_dir = tmp_path / "artifacts"
+    monkeypatch.setattr(web_app, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(web_app, "ARTIFACTS_DIR", artifacts_dir)
+    monkeypatch.setattr(
+        web_app,
+        "_is_writable_dir",
+        lambda path: not str(path).startswith(str(output_dir)),
+    )
+
+    selected = web_app._select_task_output_dir("brand_a")
+
+    assert selected == (artifacts_dir / "brand_a").resolve(strict=False)
+    assert selected.is_absolute()
+    assert selected.exists()
+
+
 def test_detect_progress_ignores_historical_edit_plan(monkeypatch, tmp_path) -> None:
     artifacts_dir = tmp_path / "artifacts"
     brand_dir = artifacts_dir / "brand_a"
